@@ -6,6 +6,7 @@ import type {
   PlexResult,
   Collection,
   CollectionSummary,
+  Details,
   FailedSong,
   FixReport,
   ImportManifest,
@@ -790,3 +791,49 @@ export function plexReport(dryRun: boolean, ids?: string[]): PlexReport {
   return { library: "Music", dry_run: dryRun, results }
 }
 
+/** Stand-in for lookup.details: the same sample discography for any artist. */
+export function details(j: Pick<Job, "request" | "link">): Details {
+  const r = j.request
+  const artist = r?.artist ?? "Tame Impala"
+  if (r && (r.kind === "album" || r.kind === "song"))
+    return {
+      kind: r.kind,
+      id: "x".repeat(22),
+      name: r.title ?? "Currents",
+      subtitle: artist,
+      image_url: null,
+      year: 2015,
+      bio: null,
+      bio_url: null,
+      track_count: r.kind === "song" ? 1 : 13,
+      releases: [],
+    }
+  const kinds = r?.kind === "albums" ? ["Album", "EP"] : ["Album", "EP", "Single"]
+  const all: [string, number, Details["releases"][number]["kind"]][] = [
+    ["InnerSpeaker", 2010, "Album"],
+    ["Lonerism", 2012, "Album"],
+    ["Currents", 2015, "Album"],
+    ["The Slow Rush", 2020, "Album"],
+    ["Tame Impala EP", 2008, "EP"],
+    ["Elephant", 2012, "Single"],
+    ["Borderline", 2019, "Single"],
+  ]
+  return {
+    kind: "artist",
+    id: "y".repeat(22),
+    name: artist,
+    subtitle: null,
+    image_url: null,
+    year: null,
+    bio: `${artist} is an Australian psychedelic music project led by Kevin Parker, who writes, records and produces nearly everything himself.`,
+    bio_url: "https://en.wikipedia.org/wiki/Tame_Impala",
+    track_count: r?.kind === "top" ? 10 : null,
+    releases:
+      r?.kind === "top"
+        ? []
+        : all
+            .filter(([, , k]) => kinds.includes(k))
+            .sort((a, b) => a[1] - b[1])
+            .map(([name, year, kind], i) => ({ id: String(i).padStart(22, "a"), name, year, kind, cover_url: null })),
+  }
+}

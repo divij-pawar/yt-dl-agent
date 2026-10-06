@@ -11,12 +11,15 @@ by a background worker, one at a time, so you can keep typing while it downloads
 
 import queue
 import re
+import textwrap
 import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from . import catalog, llm, log, sources, spotify_url
+from rich.markup import escape
+
+from . import catalog, llm, log, lookup, sources, spotify_url
 from .match import norm
 from .models import Collection, Track
 
@@ -165,6 +168,8 @@ def expand(job: Job) -> list:
             return [("artist", sid)]
         if kind == "tracks":  # comma-separated track IDs: songs picked from a playlist preview in the web UI
             return [("track", tid) for tid in sid.split(",") if tid]
+        if kind == "albums":  # comma-separated album IDs: releases ticked in the "I understood" step
+            return [("album", aid) for aid in sid.split(",") if aid]
         if kind == "artist":  # an artist link means their discography
             name = sources.embed_entity("artist", sid)["name"]
             return _artist(llm.Request(kind="discography", artist=name), job)
@@ -241,6 +246,83 @@ class DownloadQueue:
                     log.say("[green]Queue finished.[/] Type more, or 'quit'.")
 
 
+# --- "I understood": what each request points at ------------------------------
+
+
+def _show_details(d: dict) -> None:
+    head = f"{d['name']}" + (f" by {d['subtitle']}" if d.get("subtitle") else "") + (f" ({d['year']})" if d.get("year") else "")
+    log.say(f"  [bold]{escape(head)}[/]" + (f" [dim]{d['track_count']} songs[/]" if d.get("track_count") else ""))
+    if d.get("bio"):
+        for line in textwrap.wrap(d["bio"], 96)[:3]:
+            log.say(f"    [dim]{escape(line)}[/]")
+        if len(d["bio"]) > 290:
+            log.say("    [dim]...[/]")
+    if d.get("image_url"):
+        log.say(f"    [dim]photo: {escape(d['image_url'])}[/]")
+    for i, r in enumerate(d["releases"], 1):
+        log.say(f"    {i:3}. {r['year'] or '----'}  {r['kind']:<6} {escape(r['name'])}")
+
+
+def _numbers(text: str, n: int) -> set[int] | None:
+    """'2,5,7-9' -> {2, 5, 7, 8, 9} (1-based); None if it isn't that."""
+    out = set()
+    for part in text.replace(" ", "").split(","):
+        lo, _, hi = part.partition("-")
+        if not (lo.isdigit() and (not hi or hi.isdigit())):
+            return None
+        out.update(range(int(lo), int(hi or lo) + 1))
+    return out if out and max(out) <= n and min(out) >= 1 else None
+
+
+def pick_releases(answer: str, n: int) -> list[int] | None:
+    """The answer to "which releases?" -> 0-based indexes to keep. Enter/all = everything,
+    'skip 2,5' drops those, 'only 1-4' keeps those. None if it wasn't understood."""
+    a = answer.strip().lower()
+    if a in ("", "all", "y", "yes"):
+        return list(range(n))
+    word, _, rest = a.partition(" ")
+    if word in ("none", "no", "n"):
+        return []
+    if word in ("skip", "not", "except", "only") and (nums := _numbers(rest, n)):
+        return [i for i in range(n) if (i + 1 in nums) == (word == "only")]
+    return None
+
+
+def review(job: Job, ask_which: bool) -> Job | None:
+    """Show what the job points at; for discographies let the user drop releases. Returns the job to queue
+    (narrowed when some were dropped), or None when nothing is left. Lookup failures leave the job as it was."""
+    try:
+        d = lookup.details(job.request, job.link)
+    except Exception as e:  # noqa: BLE001 - the details are a nicety; the job still runs without them
+        log.say(f"  [dim]{escape(job.label.strip())}: no details ({escape(log.explain(e))})[/]")
+        log.exception("lookup failed")
+        return job
+    if not d:
+        return job
+    _show_details(d)
+    rels = d["releases"]
+    if not rels or not ask_which:
+        return job
+    while True:
+        try:
+            keep = pick_releases(input(f"  Which of these {len(rels)}? [Enter = all, 'skip 2,5', 'only 1-4', 'none'] "), len(rels))
+        except EOFError:
+            keep = list(range(len(rels)))
+        if keep is not None:
+            break
+        log.say("  Say e.g. 'skip 2,5' or 'only 1-4'.")
+    if len(keep) == len(rels):
+        return job
+    if not keep:
+        return None
+    picked = [rels[i] for i in keep]
+    narrowed = Job(label=f"albums       {d['name']} ({len(picked)} of {len(rels)} releases)",
+                   link=("albums", ",".join(r["id"] for r in picked)), via=job.via)
+    narrowed.names = {r["id"]: r["name"] for r in picked}
+    narrowed.note = f"{d['name']}: {len(picked)} releases"
+    return narrowed
+
+
 def _confirm(prompt: str) -> bool:
     try:
         return input(f"{prompt} [Y/n] ").strip().lower() in ("", "y", "yes")
@@ -295,7 +377,11 @@ def chat(run_unit, auto_yes: bool = False) -> None:
             continue
         log.say("I understood:")
         for j in jobs:
-            log.say(f"  - {j.label}")
+            log.say(f"  - {escape(j.label)}")
+        jobs = [r for j in jobs if (r := review(j, not auto_yes))]
+        if not jobs:
+            log.say("Nothing left to queue.")
+            continue
         if auto_yes or _confirm(f"Queue {'these' if len(jobs) > 1 else 'this'}?"):
             for j in jobs:
                 q.add(j)

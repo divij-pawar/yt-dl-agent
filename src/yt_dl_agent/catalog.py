@@ -16,7 +16,7 @@ from tavily import TavilyClient
 
 from . import log
 from .match import norm
-from .sources import embed_entity
+from .sources import embed_entity, largest_image
 
 _ID = r"([A-Za-z0-9]{22})"
 _ARTIST_ANY = re.compile(r"open\.spotify\.com/(?:intl-[a-z-]+/)?artist/" + _ID)
@@ -37,6 +37,7 @@ class Release:
     id: str
     kind: str  # Album | Single | EP | Compilation
     year: int | None = None
+    cover_url: str | None = None  # filled in by own_releases
 
 
 def _client() -> TavilyClient:
@@ -70,8 +71,18 @@ def _artist_in(artist: str, credits: str) -> bool:
     return any(norm(c) == want for c in credits.split(",")) or want in norm(credits)
 
 
+_artists: dict[str, tuple[str, str]] = {}  # the confirm step looks things up, then the run does it again
+_releases: dict[str, list[Release]] = {}
+
+
 def find_artist(name: str) -> tuple[str, str] | None:
     """(display name, artist id)"""
+    if (key := norm(name)) not in _artists and (found := _find_artist(name)):
+        _artists[key] = found
+    return _artists.get(key)
+
+
+def _find_artist(name: str) -> tuple[str, str] | None:
     for query in (f"{name} artist", f"{name} spotify artist"):
         results = _search(query)
         for kind, aid, title in results:
@@ -93,6 +104,12 @@ def find_artist(name: str) -> tuple[str, str] | None:
 
 
 def artist_releases(artist_id: str) -> list[Release]:
+    if artist_id not in _releases and (found := _artist_releases(artist_id)):
+        _releases[artist_id] = found
+    return _releases.get(artist_id, [])
+
+
+def _artist_releases(artist_id: str) -> list[Release]:
     base = f"https://open.spotify.com/artist/{artist_id}"
     pages = {base: _ARTIST_PAGE_RELEASE, f"{base}/discography/album": _DISCO_PAGE_RELEASE,
              f"{base}/discography/single": _DISCO_PAGE_RELEASE}
@@ -128,9 +145,11 @@ def own_releases(artist: str, releases: list[Release]) -> list[Release]:
     artist's single that this artist sings on. Checked against each release's embed page (plain HTTP)."""
     def owner(rel: Release) -> str:
         try:
-            return embed_entity("album", rel.id).get("subtitle") or ""
+            ent = embed_entity("album", rel.id)
         except Exception:  # noqa: BLE001 - can't check: keep it
             return artist
+        rel.cover_url = largest_image(ent)
+        return ent.get("subtitle") or ""
 
     with ThreadPoolExecutor(8) as pool:
         owners = list(pool.map(owner, releases))

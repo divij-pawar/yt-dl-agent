@@ -6,6 +6,7 @@ import * as mock from "./mock"
 import type {
   Collection,
   CollectionSummary,
+  Details,
   FailedSong,
   FixReport,
   ImportManifest,
@@ -36,6 +37,9 @@ export interface Api {
   enqueue(jobs: Job[], options: RunOptions): Promise<Job[]>
   /** GET  /api/queue            DownloadQueue.jobs, with live progress of the running one */
   queue(): Promise<Job[]>
+  /** POST /api/details          lookup.details: artist photo/bio, album cover/year, discography release list.
+   *  Rejects (404) when there's nothing to show or Spotify has no match. */
+  details(job: Pick<Job, "request" | "link">): Promise<Details>
   /** GET  /api/profiles/:id     sources.user_playlists(id): for --list, then pick (--match) */
   profilePlaylists(userId: string): Promise<ProfilePlaylist[]>
   /** GET  /api/preview/:kind/:id  a Spotify list before downloading it (embed page + library check) */
@@ -118,7 +122,7 @@ function job(partial: Pick<Job, "label" | "request" | "link" | "via">): Job {
 export function linkJob(kind: LinkKind, id: string, name?: string): Job {
   const j = job({ label: `link         ${kind} ${id}`, request: null, link: [kind, id], via: "link" })
   if (name && kind !== "user" && kind !== "import" && kind !== "fix")
-    j.units = kind === "tracks" ? [] : [{ kind: kind === "top" ? "artist" : kind, id, name }] // top: the artist's top tracks
+    j.units = kind === "tracks" || kind === "albums" ? [] :[{ kind: kind === "top" ? "artist" : kind, id, name }] // top: the artist's top tracks
   return j
 }
 
@@ -212,6 +216,7 @@ export const mockApi: Api = {
   },
   enqueue: (jobs) => wait(jobs),
   queue: () => wait(mock.jobs),
+  details: (j) => wait(mock.details(j), 900),
   profilePlaylists: () => wait(mock.profilePlaylists, 700),
   preview: (kind, id) => wait(mock.preview(kind, id), 500),
   collections: () => wait(mock.collectionSummaries),
@@ -266,6 +271,7 @@ export const httpApi: Api = {
   parse: (line) => call("POST", "/parse", { line }),
   enqueue: (jobs, options) => call("POST", "/queue", { jobs, options }),
   queue: () => call("GET", "/queue"),
+  details: (j) => call("POST", "/details", { request: j.request, link: j.link }),
   profilePlaylists: (id) => call("GET", `/profiles/${encodeURIComponent(id)}`),
   preview: (kind, id) => call("GET", `/preview/${kind}/${id}`),
   collections: () => call("GET", "/collections"),

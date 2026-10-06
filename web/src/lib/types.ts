@@ -77,7 +77,29 @@ export interface ParsedRequest {
 
 /** spotify_url.parse() kinds, plus "top" (an artist's top tracks), "tracks" (comma-separated track IDs picked
  *  in a preview) and the chat-only library tools */
-export type LinkKind = "playlist" | "album" | "track" | "artist" | "user" | "top" | "tracks" | "import" | "fix"
+export type LinkKind = "playlist" | "album" | "track" | "artist" | "user" | "top" | "tracks" | "albums" | "import" | "fix"
+
+/** lookup.py: what a request points at, shown in "I understood" before anything is downloaded */
+export interface Release {
+  id: string
+  name: string
+  year: number | null
+  kind: "Album" | "EP" | "Single" | "Compilation"
+  cover_url: string | null
+}
+
+export interface Details {
+  kind: "artist" | "album" | "song"
+  id: string
+  name: string
+  subtitle: string | null // album/song: the artists
+  image_url: string | null
+  year: number | null
+  bio: string | null // Wikipedia's summary, artists only
+  bio_url: string | null
+  track_count: number | null
+  releases: Release[] // what a discography would download; empty otherwise
+}
 
 export type JobStatus = "queued" | "working" | "done" | "failed"
 

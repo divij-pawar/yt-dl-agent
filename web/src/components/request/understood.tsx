@@ -2,7 +2,9 @@ import { useMemo, useState } from "react"
 import { EyeIcon, InfoIcon, Loader2Icon, UserIcon, XIcon } from "lucide-react"
 import { NavLink } from "react-router-dom"
 import { KindBadge, ViaBadge } from "@/components/status"
+import { Cover } from "@/components/cover"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -10,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { api, describe } from "@/lib/api"
 import { useLoad } from "@/lib/hooks"
-import type { Job } from "@/lib/types"
+import type { Details, Job } from "@/lib/types"
 
 /** chat.py's "I understood: … Queue these? [Y/n]", as a reviewable list. */
 export function Understood({
@@ -29,7 +31,12 @@ export function Understood({
   const [picked, setPicked] = useState<Record<string, Job[]>>({})
   const anyModel = jobs.some((j) => j.via === "model")
 
-  const final = jobs.flatMap((j) => (j.link?.[0] === "user" ? (picked[j.id] ?? []) : [j]))
+  const final = jobs.flatMap((j) => picked[j.id] ?? (j.link?.[0] === "user" ? [] : [j]))
+  const setPick = (id: string, sel: Job[] | null) =>
+    setPicked((p) => {
+      const { [id]: _old, ...rest } = p
+      return sel ? { ...rest, [id]: sel } : rest
+    })
 
   return (
     <Card className="border-primary/30 ring-1 ring-primary/10">
@@ -82,6 +89,7 @@ export function Understood({
                 <XIcon />
               </Button>
             </div>
+            {canDetail(j) && <JobDetails job={j} onPick={(sel) => setPick(j.id, sel)} />}
             {j.request?.kind === "song" && (
               <p className="border-t px-3 py-1.5 text-xs text-muted-foreground">
                 If this turns out to be an album, the album is downloaded instead. Not on Spotify → searched on YouTube by
@@ -94,7 +102,7 @@ export function Understood({
               </p>
             )}
             {j.link?.[0] === "user" && (
-              <ProfilePicker userId={j.link[1]} onPick={(sel) => setPicked((p) => ({ ...p, [j.id]: sel }))} />
+              <ProfilePicker userId={j.link[1]} onPick={(sel) => setPick(j.id, sel)} />
             )}
           </div>
         ))}
@@ -200,4 +208,120 @@ function ProfilePicker({ userId, onPick }: { userId: string; onPick: (jobs: Job[
       </p>
     </div>
   )
+}
+
+/** Requests and links lookup.details can say more about (not playlists, profiles or the library tools). */
+const canDetail = (j: Job) => !!j.request || (!!j.link && ["artist", "album", "track", "top"].includes(j.link[0]))
+
+/** Photo, bio, year and, for discographies, every release with a checkbox. Unticked releases are dropped:
+ *  the job becomes an "albums" link with just the ticked IDs (chat.expand). */
+function JobDetails({ job, onPick }: { job: Job; onPick: (sel: Job[] | null) => void }) {
+  const { data: d, error, loading } = useLoad(() => api.details(job), [job.id])
+  const [sel, setSel] = useState<Set<string> | null>(null) // null: everything ticked
+  const [more, setMore] = useState(false)
+
+  if (loading)
+    return (
+      <p className="flex items-center gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
+        <Loader2Icon className="size-3.5 animate-spin" />
+        Looking it up…
+      </p>
+    )
+  if (error || !d)
+    return <p className="border-t px-3 py-1.5 text-xs text-muted-foreground">No details: {error?.message ?? "nothing found"}</p>
+
+  const ticked = sel ?? new Set(d.releases.map((r) => r.id))
+  const choose = (next: Set<string>) => {
+    setSel(next)
+    onPick(next.size === d.releases.length ? null : narrowed(job, d, next))
+  }
+  const facts = [d.subtitle, d.year, d.track_count ? `${d.track_count} songs` : null].filter(Boolean).join(" · ")
+
+  return (
+    <div className="space-y-3 border-t p-3">
+      <div className="flex gap-3">
+        <Cover src={d.image_url} alt={d.name} className={d.kind === "artist" ? "size-20 rounded-full" : "size-20"} />
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="truncate text-sm font-medium">{d.name}</p>
+          {facts && <p className="text-xs text-muted-foreground">{facts}</p>}
+          {d.bio && (
+            <p className="text-xs text-muted-foreground">
+              <span className={more ? "" : "line-clamp-3"}>{d.bio}</span>
+              <button type="button" className="mr-2 text-foreground underline-offset-2 hover:underline" onClick={() => setMore(!more)}>
+                {more ? "less" : "more"}
+              </button>
+              {d.bio_url && (
+                <a href={d.bio_url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+                  Wikipedia
+                </a>
+              )}
+            </p>
+          )}
+        </div>
+      </div>
+      {d.releases.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium">
+              {ticked.size} of {d.releases.length} releases
+            </span>
+            <span className="ml-auto flex gap-1">
+              <Button variant="outline" size="xs" onClick={() => choose(new Set(d.releases.map((r) => r.id)))}>
+                All
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => choose(new Set(d.releases.filter((r) => r.kind === "Album" || r.kind === "EP").map((r) => r.id)))}
+              >
+                No singles
+              </Button>
+              <Button variant="ghost" size="xs" onClick={() => choose(new Set())}>
+                None
+              </Button>
+            </span>
+          </div>
+          <ScrollArea className="h-60 rounded-md border">
+            <div className="grid gap-px p-1 sm:grid-cols-2">
+              {d.releases.map((r) => (
+                <label key={r.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted">
+                  <Checkbox
+                    checked={ticked.has(r.id)}
+                    onCheckedChange={(c) => {
+                      const next = new Set(ticked)
+                      if (c) next.add(r.id)
+                      else next.delete(r.id)
+                      choose(next)
+                    }}
+                  />
+                  <Cover src={r.cover_url} alt="" className="size-8" />
+                  <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{r.year ?? ""}</span>
+                  <Badge variant="outline" className="shrink-0 text-[10px]">
+                    {r.kind}
+                  </Badge>
+                </label>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The job for just the ticked releases. */
+function narrowed(job: Job, d: Details, ids: Set<string>): Job[] {
+  const picked = d.releases.filter((r) => ids.has(r.id))
+  if (!picked.length) return []
+  return [
+    {
+      ...job,
+      id: `${job.id}-sel`,
+      label: `albums       ${d.name} (${picked.length} of ${d.releases.length} releases)`,
+      request: null,
+      link: ["albums", picked.map((r) => r.id).join(",")],
+      units: picked.map((r) => ({ kind: "album", id: r.id, name: r.name })),
+    },
+  ]
 }

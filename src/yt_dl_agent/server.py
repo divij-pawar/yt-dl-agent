@@ -30,7 +30,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict
 
-from . import chat, cli, config, covers, fixer, history, importer, llm, log, plex, sources, spotify_url
+from . import chat, cli, config, covers, fixer, history, importer, llm, log, lookup, plex, sources, spotify_url
 from .library import sanitize
 from .library_index import _NOT_COLLECTIONS, LibraryIndex
 from .models import Collection, Track
@@ -40,7 +40,7 @@ DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
 _SPECIAL = {importer.IMPORTED_CACHE, fixer.ORPHANS_CACHE, importer.SOURCES_CACHE}
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 # top: an artist's top tracks; tracks: comma-separated track IDs (songs picked in a preview)
-_QUEUE_KINDS = {"playlist", "album", "track", "artist", "user", "top", "tracks"}
+_QUEUE_KINDS = {"playlist", "album", "track", "artist", "user", "top", "tracks", "albums"}
 _SPOTIFY_ID = re.compile(r"[A-Za-z0-9]{22}")
 _RUN_KEYS = {"out", "workers", "bitrate", "links_only", "no_playlist", "no_album_lookup", "limit",
              "cookies_from_browser", "no_plex"}
@@ -182,6 +182,30 @@ def parse(body: ParseIn) -> dict:
     return {"jobs": [_job_json(j) for j in jobs], "warnings": messages}
 
 
+class DetailsIn(BaseModel):
+    request: llm.Request | None = None
+    link: list[str] | None = None
+
+
+@app.post("/api/details")
+def details(body: DetailsIn) -> dict:
+    """lookup.details: the artist photo/bio, album cover/year and release list behind a parsed request."""
+    link = (body.link[0], body.link[1]) if body.link and len(body.link) == 2 else None
+    if link and not _SPOTIFY_ID.fullmatch(link[1]):
+        raise HTTPException(404, "Nothing to show for that.")
+    if not (link or body.request):
+        raise HTTPException(400, "Give a request or a link.")
+    try:
+        d = lookup.details(body.request, link)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Couldn't look that up: {log.explain(e)}") from e
+    if d is None:
+        raise HTTPException(404, "Nothing to show for that.")
+    return d
+
+
 class JobIn(BaseModel):
     label: str = ""
     request: llm.Request | None = None
@@ -203,6 +227,8 @@ def enqueue(body: QueueIn) -> list[dict]:
         if ji.link:
             if len(ji.link) != 2 or ji.link[0] not in _QUEUE_KINDS:
                 raise HTTPException(400, f"Can't queue a {ji.link[0]!r} link.")
+            if ji.link[0] in ("tracks", "albums") and not all(_SPOTIFY_ID.fullmatch(t) for t in ji.link[1].split(",")):
+                raise HTTPException(400, f"A {ji.link[0]} link is comma-separated Spotify IDs.")
             job = chat.Job(label=ji.label or f"link         {ji.link[0]} {ji.link[1]}",
                            link=(ji.link[0], ji.link[1]), via="link")
             job.names.update({u["id"]: u["name"] for u in ji.units if u.get("id") and u.get("name")})
