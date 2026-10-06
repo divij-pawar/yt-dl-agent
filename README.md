@@ -434,7 +434,9 @@ songs/
 ```
 
 - Folders use the primary artist (`"Artist A, Artist B"` → `Artist A`).
-- Characters Windows doesn't allow in filenames are removed (`Day/Night` → `DayNight`), and trailing dots are stripped.
+- Characters Windows doesn't allow in filenames are removed (`Day/Night` → `DayNight`). Leading and
+  trailing dots are stripped too: a name starting with `.` (like `...Baby One More Time`) counts as a
+  hidden file, and Plex never scans hidden files.
 - Tracks with no known album go in `Artist/Singles/`.
 - Track numbers come from the song's position on its album (Spotify's album page). Songs whose album
   couldn't be found have no prefix.

@@ -11,7 +11,8 @@ MAX_SEGMENT = 100
 
 def sanitize(name: str) -> str:
     s = _BAD_CHARS.sub("", name)
-    s = re.sub(r"\s+", " ", s).strip().rstrip(". ")
+    # Leading dots make a hidden file/folder, which Plex (and macOS/Linux) skip: "...Baby One More Time".
+    s = re.sub(r"\s+", " ", s).strip().strip(". ")
     s = s[:MAX_SEGMENT].rstrip(". ")
     if s.upper().split(".")[0] in _RESERVED:
         s = f"_{s}"

@@ -10,6 +10,7 @@ export default defineConfig({
   },
   server: {
     // The FastAPI wrapper around yt_dl_agent (see src/lib/api.ts) is expected here.
-    proxy: { '/api': 'http://127.0.0.1:8765' },
+    // API_PROXY points it at another `yt-dl-agent serve --port N` (e.g. a second checkout).
+    proxy: { '/api': process.env.API_PROXY ?? 'http://127.0.0.1:8765' },
   },
 })

@@ -23,6 +23,25 @@
         "serve"
       ],
       "port": 8765
+    },
+    {
+      "name": "server-alt",
+      "runtimeExecutable": ".venv/Scripts/yt-dl-agent.exe",
+      "runtimeArgs": [
+        "serve",
+        "--port",
+        "8766"
+      ],
+      "port": 8766
+    },
+    {
+      "name": "web-live-alt",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set API_PROXY=http://127.0.0.1:8766&& npm --prefix web run dev:live -- --port 5174 --strictPort"
+      ],
+      "port": 5174
     }
   ]
 }
