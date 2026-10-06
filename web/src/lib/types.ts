@@ -73,8 +73,9 @@ export interface ParsedRequest {
   title: string | null
 }
 
-/** spotify_url.parse() kinds, plus "top" (an artist's top tracks) and the chat-only library tools */
-export type LinkKind = "playlist" | "album" | "track" | "artist" | "user" | "top" | "import" | "fix"
+/** spotify_url.parse() kinds, plus "top" (an artist's top tracks), "tracks" (comma-separated track IDs picked
+ *  in a preview) and the chat-only library tools */
+export type LinkKind = "playlist" | "album" | "track" | "artist" | "user" | "top" | "tracks" | "import" | "fix"
 
 export type JobStatus = "queued" | "working" | "done" | "failed"
 
@@ -196,6 +197,37 @@ export interface RunSummary {
 export interface RunRecord extends RunSummary {
   tracks: RunTrack[]
   removed: { title: string; artist: string }[]
+}
+
+// --- preview (GET /api/preview/:kind/:id) ----------------------------------------------
+
+export interface PreviewTrack {
+  title: string
+  artist: string
+  album: string | null // playlists: from the album cache, when known
+  duration_s: number | null
+  explicit: boolean
+  spotify_track_id: string | null
+  preview_url: string | null // Spotify's 30-second MP3 preview
+  in_library: string | null // the file it would reuse
+  failed_before: boolean
+  error: string | null
+}
+
+/** A Spotify list as it is right now, before downloading it. */
+export interface Preview {
+  kind: "playlist" | "album" | "track" | "artist"
+  spotify_id: string
+  name: string
+  owner: string | null
+  cover_url: string | null
+  colors: { background: string | null; tinted: string | null; subdued: string | null } // Spotify's own, per cover
+  year: number | null
+  duration_s: number
+  capped: boolean // embed pages stop at 100 tracks
+  downloaded_before: string | null // last run of this list, if any
+  requeue: Requeue | null
+  tracks: PreviewTrack[]
 }
 
 // --- importer.py -----------------------------------------------------------------

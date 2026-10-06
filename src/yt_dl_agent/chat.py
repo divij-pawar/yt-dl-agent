@@ -162,6 +162,8 @@ def expand(job: Job) -> list:
             return [("playlist", pid) for _, pid in playlists]
         if kind == "top":  # an artist's top tracks (the web UI re-runs "artist" collections this way)
             return [("artist", sid)]
+        if kind == "tracks":  # comma-separated track IDs: songs picked from a playlist preview in the web UI
+            return [("track", tid) for tid in sid.split(",") if tid]
         if kind == "artist":  # an artist link means their discography
             name = sources.embed_entity("artist", sid)["name"]
             return _artist(llm.Request(kind="discography", artist=name), job)

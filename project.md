@@ -275,6 +275,7 @@ Requires Python 3.12+, ffmpeg on PATH, a JS runtime (deno or node), and Ollama r
 | `GET /api/unsorted` | `.cache/unsorted.json` |
 | `POST /api/fix` | `fixer.run_fix`, which returns its report |
 | `GET /api/runs[/{id}]` | `songs/.cache/runs/*.json` (history.py), newest first; `?job=` for one queue job |
+| `GET /api/preview/{kind}/{id}` | `sources.embed_entity` + `from_embed` (no Tavily, no downloads), each track checked against `LibraryIndex`; albums from `albums.json` |
 | `GET /api/failed` | failed tracks across all collections that still aren't in the library, with where they failed |
 | `GET /api/logs[/{name}]` | `logs/run-*.log`, parsed |
 | `GET /api/health`, `GET`/`PUT /api/settings` | service checks; `.env` through `config.py` |
@@ -300,6 +301,8 @@ Design points:
   Logs from before history existed are turned into records once (`history.backfill`, on the first
   `GET /api/runs`), marked `from_log`: the log names what was downloaded and failed and how many were
   reused; which songs were reused comes from the collection's cache.
+- **Picked songs** from a preview are queued as one job with a `tracks` link (comma-separated track IDs),
+  which `chat.expand` turns into one `("track", id)` unit per song.
 - **Local only.** Requests whose `Host` or `Origin` isn't localhost get 403, so other web pages can't
   drive the app (CSRF, DNS rebinding). Secrets come back masked, and a masked value sent back unchanged
   keeps the stored key.

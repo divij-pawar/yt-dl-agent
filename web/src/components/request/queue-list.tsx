@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 type Filter = "all" | "active" | "done" | "failed"
 
 function title(j: Job) {
+  if (j.link?.[0] === "tracks") return j.label.replace(/^songs\s+/, "") // "3 songs from “Overnight”"
   return j.request ? describe(j.request) : j.units[0] && "name" in j.units[0] && j.units[0].name ? j.units[0].name : `${j.link![0]} ${j.link![1]}`
 }
 

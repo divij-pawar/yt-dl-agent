@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
-import { InfoIcon, Loader2Icon, UserIcon, XIcon } from "lucide-react"
+import { EyeIcon, InfoIcon, Loader2Icon, UserIcon, XIcon } from "lucide-react"
+import { NavLink } from "react-router-dom"
 import { KindBadge, ViaBadge } from "@/components/status"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -66,6 +67,12 @@ export function Understood({
                 {j.request ? describe(j.request) : <code className="text-xs">{j.link![1]}</code>}
               </span>
               <ViaBadge via={j.via} />
+              {j.link && ["playlist", "album", "track", "artist"].includes(j.link[0]) && (
+                <Button variant="outline" size="xs" render={<NavLink to={`/preview/${j.link[0]}/${j.link[1]}`} />}>
+                  <EyeIcon />
+                  Preview
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon-xs"
@@ -175,6 +182,14 @@ function ProfilePicker({ userId, onPick }: { userId: string; onPick: (jobs: Job[
                 }}
               />
               <span className="truncate">{p.name}</span>
+              <NavLink
+                to={`/preview/playlist/${p.id}`}
+                aria-label={`Preview ${p.name}`}
+                className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <EyeIcon className="size-3.5" />
+              </NavLink>
             </label>
           ))}
         </div>

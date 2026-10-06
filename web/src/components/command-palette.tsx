@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import {
   CircleHelpIcon,
   DownloadIcon,
+  EyeIcon,
   FileClockIcon,
   FolderInputIcon,
   FolderSearchIcon,
@@ -25,7 +26,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
-import { api } from "@/lib/api"
+import { api, previewPath } from "@/lib/api"
 import { useLoad } from "@/lib/hooks"
 
 const PAGES = [
@@ -97,6 +98,12 @@ export function CommandPalette() {
                 </span>
                 <CommandShortcut>↵</CommandShortcut>
               </CommandItem>
+              {previewPath(text) && (
+                <CommandItem value={`preview ${text}`} onSelect={() => go(previewPath(text)!)}>
+                  <EyeIcon />
+                  Preview it first: see the songs and what's already in your library
+                </CommandItem>
+              )}
             </CommandGroup>
           )}
           <CommandGroup heading="Go to">

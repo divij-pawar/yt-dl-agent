@@ -12,6 +12,7 @@ import type {
   LibrarySong,
   LogLine,
   LogRun,
+  Preview,
   ProfilePlaylist,
   RunRecord,
   ServiceHealth,
@@ -739,3 +740,32 @@ export const failedSongs: FailedSong[] = collections.flatMap((c) =>
       last_tried: "2026-10-06T16:05:12",
     })),
 )
+
+export function preview(kind: string, id: string): Preview {
+  const c = collections.find((x) => x.spotify_id === id) ?? collections[0]
+  return {
+    kind: (["playlist", "album", "track", "artist"].includes(kind) ? kind : "playlist") as Preview["kind"],
+    spotify_id: id,
+    name: c.name,
+    owner: c.owner_or_artist,
+    cover_url: null,
+    colors: { background: "rgb(15, 85, 139)", tinted: "rgb(0, 49, 100)", subdued: "rgb(153, 212, 255)" },
+    year: kind === "album" ? 2022 : null,
+    duration_s: c.tracks.reduce((s, t) => s + (t.duration_s ?? 0), 0),
+    capped: c.tracks.length >= 100,
+    downloaded_before: "2026-10-06T16:05:12",
+    requeue: { link: [c.kind, c.spotify_id] },
+    tracks: c.tracks.map((t, i) => ({
+      title: t.title,
+      artist: t.artist,
+      album: t.album,
+      duration_s: t.duration_s,
+      explicit: t.explicit || i % 7 === 3,
+      spotify_track_id: t.spotify_track_id,
+      preview_url: null,
+      in_library: i % 4 === 1 ? null : t.file_path,
+      failed_before: t.status === "failed",
+      error: t.error,
+    })),
+  }
+}

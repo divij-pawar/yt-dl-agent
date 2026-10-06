@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
-import { ExternalLinkIcon, FileMusicIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react"
-import { useNavigate, useParams } from "react-router-dom"
+import { ExternalLinkIcon, EyeIcon, FileMusicIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react"
+import { NavLink, useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 import { Page } from "@/components/page"
 import { SourceBadge, TrackStatusBadge } from "@/components/status"
@@ -74,6 +74,12 @@ export function PlaylistDetailPage() {
           <Button variant="outline" render={<a href={spotifyUrl(c.kind, c.spotify_id)} target="_blank" rel="noreferrer" />}>
             Spotify <ExternalLinkIcon />
           </Button>
+          {/^[A-Za-z0-9]{22}$/.test(c.spotify_id) && (
+            <Button variant="outline" render={<NavLink to={`/preview/${c.kind}/${c.spotify_id}`} />}>
+              <EyeIcon />
+              What's new on Spotify
+            </Button>
+          )}
           {c.kind === "playlist" && (
             <Button
               variant="outline"

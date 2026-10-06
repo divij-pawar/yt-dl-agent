@@ -26,6 +26,7 @@ const TITLES: Record<string, string> = {
   settings: "Settings",
   help: "Help & docs",
   history: "History",
+  preview: "Preview",
 }
 
 export function SiteHeader({ crumb }: { crumb?: string }) {
@@ -40,7 +41,7 @@ export function SiteHeader({ crumb }: { crumb?: string }) {
       <Breadcrumb className="hidden min-w-0 md:block">
         <BreadcrumbList>
           <BreadcrumbItem>
-            {sub ? <BreadcrumbLink render={<NavLink to={`/${section}`} />}>{title}</BreadcrumbLink> : <BreadcrumbPage>{title}</BreadcrumbPage>}
+            {sub && section !== "preview" ? <BreadcrumbLink render={<NavLink to={`/${section}`} />}>{title}</BreadcrumbLink> : <BreadcrumbPage>{title}</BreadcrumbPage>}
           </BreadcrumbItem>
           {sub && (
             <>

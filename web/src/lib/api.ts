@@ -16,6 +16,7 @@ import type {
   LogLine,
   LogRun,
   ParsedRequest,
+  Preview,
   ProfilePlaylist,
   Requeue,
   RunOptions,
@@ -36,6 +37,8 @@ export interface Api {
   queue(): Promise<Job[]>
   /** GET  /api/profiles/:id     sources.user_playlists(id): for --list, then pick (--match) */
   profilePlaylists(userId: string): Promise<ProfilePlaylist[]>
+  /** GET  /api/preview/:kind/:id  a Spotify list before downloading it (embed page + library check) */
+  preview(kind: string, id: string): Promise<Preview>
 
   /** GET  /api/collections      every songs/.cache/<id>.json, summarized */
   collections(): Promise<CollectionSummary[]>
@@ -108,8 +111,22 @@ function job(partial: Pick<Job, "label" | "request" | "link" | "via">): Job {
 export function linkJob(kind: LinkKind, id: string, name?: string): Job {
   const j = job({ label: `link         ${kind} ${id}`, request: null, link: [kind, id], via: "link" })
   if (name && kind !== "user" && kind !== "import" && kind !== "fix")
-    j.units = [{ kind: kind === "top" ? "artist" : kind, id, name }] // top: the artist's top tracks
+    j.units = kind === "tracks" ? [] : [{ kind: kind === "top" ? "artist" : kind, id, name }] // top: the artist's top tracks
   return j
+}
+
+/** One job that downloads songs picked in a preview (each is a unit; they file under their own albums). */
+export function tracksJob(ids: string[], from: string, names: string[] = []): Job {
+  const j = linkJob("tracks", ids.join(","))
+  j.label = `songs        ${ids.length === 1 ? (names[0] ?? "1 song") : `${ids.length} songs`} from “${from}”`
+  j.units = ids.map((id, i) => ({ kind: "track", id, name: names[i] }))
+  return j
+}
+
+/** Spotify links the preview page understands -> its route. */
+export function previewPath(text: string): string | null {
+  const m = URL_RE.exec(text)
+  return m ? `/preview/${m[1]}/${m[2]}` : null
 }
 
 /** A queue job that runs a collection (or a failed run) again. Only missing and failed songs are fetched. */
@@ -189,6 +206,7 @@ export const mockApi: Api = {
   enqueue: (jobs) => wait(jobs),
   queue: () => wait(mock.jobs),
   profilePlaylists: () => wait(mock.profilePlaylists, 700),
+  preview: (kind, id) => wait(mock.preview(kind, id), 500),
   collections: () => wait(mock.collectionSummaries),
   collection: (id) => {
     const c = mock.collections.find((c) => c.spotify_id === id)
@@ -240,6 +258,7 @@ export const httpApi: Api = {
   enqueue: (jobs, options) => call("POST", "/queue", { jobs, options }),
   queue: () => call("GET", "/queue"),
   profilePlaylists: (id) => call("GET", `/profiles/${encodeURIComponent(id)}`),
+  preview: (kind, id) => call("GET", `/preview/${kind}/${id}`),
   collections: () => call("GET", "/collections"),
   collection: (id) => call("GET", `/collections/${id}`),
   failed: () => call("GET", "/failed"),

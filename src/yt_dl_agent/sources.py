@@ -135,8 +135,9 @@ def embed_entity(kind: str, sid: str) -> dict:
     return json.loads(m.group(1))["props"]["pageProps"]["state"]["data"]["entity"]
 
 
-def from_embed(kind: str, sid: str) -> Collection:
-    ent = embed_entity(kind, sid)
+def from_embed(kind: str, sid: str, ent: dict | None = None) -> Collection:
+    """ent: the embed entity, when the caller already has it (the web UI's preview)."""
+    ent = ent or embed_entity(kind, sid)
     if kind == "track":
         artists = ", ".join(a["name"] for a in ent.get("artists", []))
         iso = ((ent.get("releaseDate") or {}).get("isoString") or "")[:4]

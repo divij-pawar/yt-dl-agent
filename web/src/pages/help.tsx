@@ -154,12 +154,79 @@ const SECTIONS: Section[] = [
           </li>
           <li>
             <b>Failed songs are retried</b> on the next sync. A YouTube 403 is common and usually temporary; each song is already
-            retried twice.
+            retried twice. See <a href="#history" className="font-medium text-foreground underline underline-offset-2">History and retrying failed songs</a>.
           </li>
           <li>
             <b>100-track cap.</b> Without working Spotify API access, only a playlist's first 100 tracks are visible. See{" "}
             <Go to="/settings">Settings</Go>.
           </li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    id: "history",
+    title: "History and retrying failed songs",
+    keywords: "history runs previous downloaded skipped reused already failed retry requeue again log",
+    body: (
+      <>
+        <P>
+          <Go to="/history">History</Go> records every run of a playlist, album or song (from this page, chat or the command line),
+          song by song:
+        </P>
+        <Table
+          head={["In a run", "Means"]}
+          rows={[
+            [<span className="font-medium text-success">Downloaded</span>, "Fetched from YouTube in this run."],
+            [<span className="font-medium">Already in library</span>, "Downloaded before (by this or another playlist or album), so it was skipped. The playlist file points at the existing MP3."],
+            [<span className="font-medium text-destructive">Failed</span>, "Couldn't be downloaded; the reason is shown. It's tried again next time the playlist runs."],
+            [<span className="font-medium">Removed</span>, "No longer on the Spotify list since the previous run. The MP3 is kept."],
+            [<span className="font-medium text-destructive">Run failed</span>, "The run couldn't start, e.g. the track list couldn't be read. The reason is shown, with Run again."],
+          ]}
+        />
+        <P>
+          Open a run for the full lists, its log, and <b>Retry failed songs</b>. On the queue, <b>Details</b> on a finished job shows the
+          runs it made. Runs from before History existed are rebuilt from their <Go to="/logs">logs</Go> the first time History opens
+          (marked “rebuilt from its log”).
+        </P>
+        <P>
+          <b>Downloaded songs</b> (the second tab) lists every song in the library by the day its file arrived, newest first, including
+          songs downloaded before there were any logs.
+        </P>
+        <P>
+          <b>Failed songs</b> (in the sidebar, or the Failed filter on <Go to="/library?show=failed">Songs</Go>) lists every song that
+          failed somewhere and still isn't in the library. Open one to see why, then <b>Run “playlist” again</b> (only missing and
+          failed songs are fetched, and its playlist file is updated) or <b>Download just this song</b>. <b>Retry all failed</b> re-runs
+          every playlist and album that has a failure. If YouTube asked for a sign-in, set “YouTube login from” in Settings first.
+        </P>
+      </>
+    ),
+  },
+  {
+    id: "preview",
+    title: "Preview a Spotify list before downloading",
+    keywords: "preview spotify playlist album artist songs before download select new library listen",
+    body: (
+      <>
+        <P>
+          Paste a playlist, album, song or artist link and its preview opens straight away (setting <b>Preview Spotify links
+          first</b>, on by default; turn it off in <Go to="/settings">Settings</Go> or under the request box). With it off, press{" "}
+          <b>Preview</b> in “I understood”, or choose “Preview it first” in{" "}
+          <KbdGroup>
+            <Kbd>Ctrl</Kbd>
+            <Kbd>K</Kbd>
+          </KbdGroup>
+          . Profile playlists have a preview link in the picker, and downloaded playlists have <b>What's new on Spotify</b>.
+        </P>
+        <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
+          <li>It shows the list as it is on Spotify now, with every song marked <b>In library</b>, <b>New</b> or <b>Failed before</b>.</li>
+          <li>
+            The round button downloads the list: only the new songs are fetched. Or tick songs and use <b>Download selected</b>; those
+            are filed under their own albums.
+          </li>
+          <li>Hover a number to play Spotify's 30-second preview. “Only songs not in my library” hides what you already have.</li>
+          <li>For an artist it shows their top songs, with a button for the whole discography.</li>
+          <li>Previewing reads Spotify's public embed page only: no Tavily credits, nothing downloaded.</li>
         </ul>
       </>
     ),

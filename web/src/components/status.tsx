@@ -118,6 +118,7 @@ const KIND_LABEL: Record<RequestKind | LinkKind, string> = {
   track: "track",
   artist: "artist",
   user: "profile",
+  tracks: "songs",
   import: "import",
   fix: "fix",
 }

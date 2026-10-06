@@ -25,6 +25,7 @@ function fakeUnits(j: Job): Unit[] {
     const [kind, id] = j.link
     if (kind === "user") return mock.profilePlaylists.slice(0, 3).map((p) => ({ kind: "playlist", id: p.id, name: p.name }))
     if (kind === "import" || kind === "fix") return [{ kind: "fix" }]
+    if (kind === "tracks") return id.split(",").map((t) => ({ kind: "track", id: t, name: `track ${t.slice(0, 6)}…` }))
     return [{ kind: kind === "top" ? "artist" : kind, id, name: `${kind} ${id.slice(0, 6)}…` }]
   }
   const r = j.request!

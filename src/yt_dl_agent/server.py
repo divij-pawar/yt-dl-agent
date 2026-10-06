@@ -39,7 +39,9 @@ DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
 # Caches that are collections on disk but aren't playlists or albums.
 _SPECIAL = {importer.IMPORTED_CACHE, fixer.ORPHANS_CACHE, importer.SOURCES_CACHE}
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
-_QUEUE_KINDS = {"playlist", "album", "track", "artist", "user", "top"}  # top: an artist's top tracks
+# top: an artist's top tracks; tracks: comma-separated track IDs (songs picked in a preview)
+_QUEUE_KINDS = {"playlist", "album", "track", "artist", "user", "top", "tracks"}
+_SPOTIFY_ID = re.compile(r"[A-Za-z0-9]{22}")
 _RUN_KEYS = {"out", "workers", "bitrate", "links_only", "no_playlist", "no_album_lookup", "limit",
              "cookies_from_browser"}
 RECENT = 6
@@ -377,6 +379,66 @@ def run_detail(run_id: str) -> dict:
     return json.loads(f.read_text("utf-8"))
 
 
+# --- preview: a Spotify list before downloading it -------------------------------------
+
+_PREVIEW_KINDS = {"playlist", "album", "track", "artist"}
+
+
+def _rgb(c: dict | None) -> str | None:
+    return f"rgb({c['red']}, {c['green']}, {c['blue']})" if c else None
+
+
+@app.get("/api/preview/{kind}/{sid}")
+def preview(kind: str, sid: str) -> dict:
+    """What a Spotify link holds, and which songs are already in the library. Reads Spotify's embed page
+    only (plain HTTP: no Tavily credits, no downloads). Albums for playlist songs come from the album cache."""
+    if kind not in _PREVIEW_KINDS or not _SPOTIFY_ID.fullmatch(sid):
+        raise HTTPException(404, "Preview works for playlist, album, track and artist links.")
+    try:
+        ent = sources.embed_entity(kind, sid)
+        coll = sources.from_embed(kind, sid, ent)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Couldn't read it from Spotify: {log.explain(e)}") from e
+    root = _root()
+    index = LibraryIndex(root)
+    albums_f = root / ".cache" / "albums.json"
+    albums = json.loads(albums_f.read_text("utf-8")) if albums_f.exists() else {}
+    cached = root / ".cache" / f"{sid}.json"
+    before = {t.key: t for t in _cached_tracks(cached)}
+    previews = {(t.get("uri") or "").rsplit(":", 1)[-1]: (t.get("audioPreview") or {}).get("url")
+                for t in ent.get("trackList", [])}
+    tracks = []
+    for t in coll.tracks:
+        album = t.album
+        if not album:
+            hit = albums.get(t.spotify_track_id or "") or albums.get(t.key)
+            album = hit if isinstance(hit, str) else (hit or {}).get("album")
+        old = before.get(t.key)
+        tracks.append({"title": t.title, "artist": t.artist, "album": album, "duration_s": t.duration_s,
+                       "explicit": t.explicit, "spotify_track_id": t.spotify_track_id,
+                       "preview_url": previews.get(t.spotify_track_id or ""), "in_library": index.find(t),
+                       "failed_before": bool(old and old.status == "failed"), "error": _clean_error(old.error) if old else None})
+    vi = ent.get("visualIdentity") or {}
+    return {
+        "kind": kind, "spotify_id": sid, "name": coll.name, "owner": coll.owner_or_artist,
+        "cover_url": sources.largest_image(ent),
+        "colors": {"background": _rgb(vi.get("backgroundBase")), "tinted": _rgb(vi.get("backgroundTintedBase")),
+                   "subdued": _rgb(vi.get("textSubdued"))},
+        "year": int(y) if (y := ((ent.get("releaseDate") or {}).get("isoString") or "")[:4]).isdigit() else None,
+        "duration_s": sum(t.duration_s or 0 for t in coll.tracks),
+        "capped": kind == "playlist" and len(coll.tracks) >= sources.EMBED_LIMIT,
+        "downloaded_before": datetime.fromtimestamp(cached.stat().st_mtime).isoformat(timespec="seconds")
+        if cached.exists() else None,
+        "requeue": history.requeue_for(kind, sid, coll.name, coll.owner_or_artist, coll.tracks),
+        "tracks": tracks,
+    }
+
+
+def _cached_tracks(f: Path) -> list[Track]:
+    try:
+        return Collection.model_validate_json(f.read_text("utf-8")).tracks
+    except (OSError, ValueError):
+        return []
 
 
 @app.get("/api/unsorted")
