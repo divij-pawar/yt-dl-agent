@@ -160,6 +160,8 @@ def expand(job: Job) -> list:
             playlists = sources.user_playlists(sid)
             job.names.update({pid: name for name, pid in playlists})
             return [("playlist", pid) for _, pid in playlists]
+        if kind == "top":  # an artist's top tracks (the web UI re-runs "artist" collections this way)
+            return [("artist", sid)]
         if kind == "artist":  # an artist link means their discography
             name = sources.embed_entity("artist", sid)["name"]
             return _artist(llm.Request(kind="discography", artist=name), job)
@@ -208,7 +210,7 @@ class DownloadQueue:
                 job.units = expand(job)
                 if job.note:
                     log.say(f"[cyan]{job.note}[/]")
-                failed = 0
+                failed, last_error = 0, ""
                 for i, unit in enumerate(job.units, 1):
                     job.unit_index = i
                     if len(job.units) > 1:
@@ -217,10 +219,13 @@ class DownloadQueue:
                         self.run_unit(*unit)
                     except Exception as e:  # noqa: BLE001 - one bad album shouldn't stop the rest
                         failed += 1
-                        log.say(f"[red]error[/] {log.explain(e)}", log.WARNING)
+                        last_error = log.explain(e)
+                        log.say(f"[red]error[/] {last_error}", log.WARNING)
                         log.exception(f"unit {unit} failed")
                 job.status = "failed" if failed == len(job.units) else "done"
-                if failed and failed < len(job.units):
+                if failed and failed == len(job.units):  # say why, not just "failed"
+                    job.note = (job.note + "; " if job.note else "") + last_error
+                elif failed:
                     job.note = (job.note + "; " if job.note else "") + f"{failed} of {len(job.units)} failed"
             except Exception as e:  # noqa: BLE001 - report and move on to the next job
                 job.status, job.note = "failed", log.explain(e) if not isinstance(e, LookupError) else str(e)

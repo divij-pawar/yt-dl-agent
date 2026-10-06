@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { QueueProvider } from "@/lib/queue"
 import { FixPage } from "@/pages/fix"
 import { HelpPage } from "@/pages/help"
+import { HistoryPage } from "@/pages/history"
 import { ImportPage } from "@/pages/import"
 import { LibraryPage } from "@/pages/library"
 import { LogsPage } from "@/pages/logs"
@@ -36,6 +37,7 @@ export default function App() {
                   <Route path="/logs" element={<LogsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/help" element={<HelpPage />} />
+                  <Route path="/history" element={<HistoryPage />} />
                 </Routes>
               </SidebarInset>
             </SidebarProvider>

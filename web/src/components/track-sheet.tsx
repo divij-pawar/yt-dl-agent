@@ -1,23 +1,32 @@
-import { CopyIcon, DiscIcon, ExternalLinkIcon, InfoIcon } from "lucide-react"
+import { useState } from "react"
+import { CopyIcon, DiscIcon, ExternalLinkIcon, InfoIcon, Loader2Icon, RotateCcwIcon } from "lucide-react"
 import { NavLink } from "react-router-dom"
 import { toast } from "sonner"
 import { TrackStatusBadge } from "@/components/status"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { duration, spotifyUrl, youtubeUrl } from "@/lib/format"
+import { useQueue } from "@/lib/queue"
+import { type RetryTarget, useRequeue } from "@/lib/requeue"
 import type { LibrarySong, Track } from "@/lib/types"
+
+/** Spotify track IDs are 22 base62 characters ("search-…" ones are songs found only by searching). */
+const isSpotifyId = (id: string | null): id is string => !!id && /^[A-Za-z0-9]{22}$/.test(id)
 
 export function TrackSheet({
   track,
   song,
+  retry = [],
   open,
   onOpenChange,
 }: {
   track: Track | null
   song?: LibrarySong | null
+  /** For a failed song: the playlists/albums it failed in, which can be run again. */
+  retry?: RetryTarget[]
   open: boolean
   onOpenChange: (o: boolean) => void
 }) {
@@ -46,15 +55,7 @@ export function TrackSheet({
             </SheetHeader>
 
             <div className="space-y-5 p-4">
-              {t.status === "failed" && t.error && (
-                <Alert variant="destructive">
-                  <InfoIcon />
-                  <AlertDescription>
-                    {t.error}
-                    <span className="mt-1 block text-xs">Run the playlist or album again to retry just the failed songs.</span>
-                  </AlertDescription>
-                </Alert>
-              )}
+              {t.status === "failed" && <TryAgain track={t} retry={retry} onDone={() => onOpenChange(false)} />}
 
               <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
                 <dt className="text-muted-foreground">Album</dt>
@@ -69,7 +70,7 @@ export function TrackSheet({
                 <dd className="tabular-nums">{duration(t.duration_s)}</dd>
               </dl>
 
-              {t.file_path && (
+              {t.file_path && t.status === "done" && (
                 <div className="space-y-1.5">
                   <div className="text-xs font-medium text-muted-foreground">File (in songs/)</div>
                   <div className="flex items-center gap-1 rounded-md bg-muted px-2 py-1.5">
@@ -135,5 +136,68 @@ export function TrackSheet({
         )}
       </SheetContent>
     </Sheet>
+  )
+}
+
+/** Why it failed, and the ways to try again. */
+function TryAgain({ track: t, retry, onDone }: { track: Track; retry: RetryTarget[]; onDone: () => void }) {
+  const { retry: requeue, retrySong } = useRequeue()
+  const { options } = useQueue()
+  const [busy, setBusy] = useState(false)
+  const targets = retry.filter((r) => r.requeue)
+  // Only worth saying when retries won't already use a browser login.
+  const botCheck = /sign-in|bot check/i.test(t.error ?? "") && !options.cookies_from_browser
+  const run = (fn: () => Promise<void>) => async () => {
+    setBusy(true)
+    try {
+      await fn()
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <Alert variant="destructive">
+        <InfoIcon />
+        <AlertTitle>Couldn't download this song</AlertTitle>
+        <AlertDescription>{t.error ?? "No reason was recorded."}</AlertDescription>
+      </Alert>
+      {botCheck && (
+        <p className="text-xs text-warning">
+          YouTube asked for a sign-in. Set “YouTube login from” in{" "}
+          <NavLink to="/settings" className="underline underline-offset-2">
+            Settings
+          </NavLink>{" "}
+          first, or the retry will likely hit the same check.
+        </p>
+      )}
+      <div className="space-y-2 rounded-lg border p-3">
+        <div className="text-sm font-medium">Try again</div>
+        {targets.map((r) => (
+          <Button key={r.name} className="w-full justify-start" disabled={busy} onClick={run(() => requeue([r]))}>
+            {busy ? <Loader2Icon className="animate-spin" /> : <RotateCcwIcon />}
+            <span className="truncate">Run “{r.name}” again</span>
+          </Button>
+        ))}
+        {isSpotifyId(t.spotify_track_id) && (
+          <Button
+            variant="outline"
+            className="w-full justify-start"
+            disabled={busy}
+            onClick={run(() => retrySong(t.spotify_track_id!, t.title))}
+          >
+            <RotateCcwIcon />
+            Download just this song
+          </Button>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {targets.length
+            ? "Running a playlist again only downloads what's missing or failed, and updates its playlist file."
+            : "Downloading just the song puts it in the library; the playlist picks it up on its next sync."}
+        </p>
+      </div>
+    </div>
   )
 }

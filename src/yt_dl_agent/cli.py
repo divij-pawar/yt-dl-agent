@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
-from . import chat, config, fixer, importer, log, sources, spotify_url
+from . import chat, config, fixer, history, importer, log, sources, spotify_url
 from .albums import fill_albums
 from .download import download
 from .enrich import enrich
@@ -92,6 +92,18 @@ def run_unit(args):
 
 
 def run_collection(kind: str, sid: str | None, args, coll: Collection | None = None) -> None:
+    """Download one playlist/album/track, and record what happened in songs/.cache/runs/ (history.py)."""
+    run = history.Run(args.out, kind, sid, args)
+    try:
+        _run_collection(kind, sid, args, coll, run)
+    except Exception as e:
+        run.fail(e)
+        raise
+    finally:
+        run.save()
+
+
+def _run_collection(kind: str, sid: str | None, args, coll: Collection | None, run: history.Run) -> None:
     root: Path = args.out
     cache_dir = root / ".cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -107,9 +119,11 @@ def run_collection(kind: str, sid: str | None, args, coll: Collection | None = N
             f"{_n(len(coll.tracks), 'track')} (from {coll.source})")
     log.event("collection", kind=coll.kind, id=sid, name=coll.name, owner=coll.owner_or_artist,
               source=coll.source, total=len(coll.tracks))
+    run.collection(coll)
     if prev and not args.limit:
         now = {t.key for t in coll.tracks}
         if removed := [t for t in prev.tracks if t.key not in now]:
+            run.removed(removed)
             log.say(f"{_n(len(removed), 'track')} removed from this {kind} since the last run; "
                     "left out of the playlist file, MP3s kept")
             for t in removed:
@@ -138,6 +152,7 @@ def run_collection(kind: str, sid: str | None, args, coll: Collection | None = N
             else:
                 todo.append(t)
         reused = len(unique) - len(todo)
+        reused_keys = {t.key for t in unique.values()} - {t.key for t in todo}
         log.event("phase", phase="downloading", total=len(unique), reused=reused)
         if not todo:
             log.say(f"[green]Up to date:[/] all {_n(len(unique), 'song')} already in the library; nothing to download")
@@ -168,10 +183,13 @@ def run_collection(kind: str, sid: str | None, args, coll: Collection | None = N
         for t in coll.tracks:
             src = unique[t.key]
             t.status, t.error, t.file_path, t.video_id = src.status, src.error, src.file_path, src.video_id
+        run.outcome(list(reversed(unique.values())), reused_keys, links_only=False)
 
         if coll.kind == "playlist" and not args.no_playlist:
             log.event("phase", phase="playlist")
-            log.say(f"playlist file -> {write_m3u8(root, coll)}")
+            m3u8 = write_m3u8(root, coll)
+            run.playlist_file(m3u8)
+            log.say(f"playlist file -> {m3u8}")
 
     if prev and (args.links_only or args.limit):
         # A partial run mustn't forget what an earlier full run downloaded.
@@ -182,6 +200,8 @@ def run_collection(kind: str, sid: str | None, args, coll: Collection | None = N
         if args.limit:
             have = {t.key for t in coll.tracks}
             coll.tracks += [t for t in prev.tracks if t.key not in have]
+    if args.links_only:
+        run.outcome(list({t.key: t for t in coll.tracks}.values()), set(), links_only=True)
     cache_file.write_text(coll.model_dump_json(indent=1), "utf-8")
     if not args.links_only:
         failed = [t for t in coll.tracks if t.status == "failed"]

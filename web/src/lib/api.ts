@@ -6,6 +6,7 @@ import * as mock from "./mock"
 import type {
   Collection,
   CollectionSummary,
+  FailedSong,
   FixReport,
   ImportManifest,
   ImportResult,
@@ -16,7 +17,10 @@ import type {
   LogRun,
   ParsedRequest,
   ProfilePlaylist,
+  Requeue,
   RunOptions,
+  RunRecord,
+  RunSummary,
   ServiceHealth,
   Settings,
   UnsortedEntry,
@@ -35,8 +39,14 @@ export interface Api {
 
   /** GET  /api/collections      every songs/.cache/<id>.json, summarized */
   collections(): Promise<CollectionSummary[]>
-  /** GET  /api/collections/:id  one cached Collection with its tracks */
-  collection(id: string): Promise<Collection | null>
+  /** GET  /api/collections/:id  one cached Collection with its tracks, plus how to run it again */
+  collection(id: string): Promise<(Collection & { requeue: Requeue | null }) | null>
+  /** GET  /api/failed           songs that failed somewhere and still aren't in the library */
+  failed(): Promise<FailedSong[]>
+  /** GET  /api/runs             history.Run records, newest first (no per-song lists); filter by queue job */
+  runs(filter?: { job?: string; spotify_id?: string }): Promise<RunSummary[]>
+  /** GET  /api/runs/:id         one run, song by song */
+  run(id: string): Promise<RunRecord | null>
   /** GET  /api/library          library.json joined with the collections that use each file */
   library(): Promise<LibrarySong[]>
 
@@ -97,8 +107,16 @@ function job(partial: Pick<Job, "label" | "request" | "link" | "via">): Job {
 /** A job for a known Spotify link, as chat.parse_line makes for pasted links. Rerunning one syncs it. */
 export function linkJob(kind: LinkKind, id: string, name?: string): Job {
   const j = job({ label: `link         ${kind} ${id}`, request: null, link: [kind, id], via: "link" })
-  if (name && kind !== "user" && kind !== "import" && kind !== "fix") j.units = [{ kind, id, name }]
+  if (name && kind !== "user" && kind !== "import" && kind !== "fix")
+    j.units = [{ kind: kind === "top" ? "artist" : kind, id, name }] // top: the artist's top tracks
   return j
+}
+
+/** A queue job that runs a collection (or a failed run) again. Only missing and failed songs are fetched. */
+export function requeueJob(r: Requeue, name?: string): Job {
+  if (r.link) return linkJob(r.link[0], r.link[1], name)
+  const req = r.request!
+  return job({ label: label(req), request: req, link: null, via: "explicit" })
 }
 
 function explicit(line: string): ParsedRequest | null {
@@ -172,7 +190,18 @@ export const mockApi: Api = {
   queue: () => wait(mock.jobs),
   profilePlaylists: () => wait(mock.profilePlaylists, 700),
   collections: () => wait(mock.collectionSummaries),
-  collection: (id) => wait(mock.collections.find((c) => c.spotify_id === id) ?? null),
+  collection: (id) => {
+    const c = mock.collections.find((c) => c.spotify_id === id)
+    return wait(c ? { ...c, requeue: { link: [c.kind, c.spotify_id] as [LinkKind, string] } } : null)
+  },
+  failed: () => wait(mock.failedSongs),
+  runs: (f) =>
+    wait(
+      mock.runs
+        .filter((r) => (!f?.job || r.job?.id === f.job) && (!f?.spotify_id || r.spotify_id === f.spotify_id))
+        .map(({ tracks: _t, removed: _r, ...summary }) => summary),
+    ),
+  run: (id) => wait(mock.runs.find((r) => r.id === id) ?? null),
   library: () => wait(mock.librarySongs),
   importFiles: (_paths, dryRun) =>
     wait({ ...mock.importResult, dry_run: dryRun, manifest: dryRun ? null : "20261006-161500.json" }, 1200),
@@ -213,6 +242,9 @@ export const httpApi: Api = {
   profilePlaylists: (id) => call("GET", `/profiles/${encodeURIComponent(id)}`),
   collections: () => call("GET", "/collections"),
   collection: (id) => call("GET", `/collections/${id}`),
+  failed: () => call("GET", "/failed"),
+  runs: (f) => call("GET", `/runs?${new URLSearchParams(Object.entries(f ?? {}).filter(([, v]) => v) as [string, string][])}`),
+  run: (id) => call("GET", `/runs/${encodeURIComponent(id)}`),
   library: () => call("GET", "/library"),
   importFiles: (paths, dry_run) => call("POST", "/import", { paths, dry_run }),
   importHistory: () => call("GET", "/imports"),

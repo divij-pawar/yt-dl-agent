@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { api, linkJob } from "@/lib/api"
+import { api, requeueJob } from "@/lib/api"
 import { duration, plural, spotifyUrl } from "@/lib/format"
 import { useLoad } from "@/lib/hooks"
 import { useQueue } from "@/lib/queue"
@@ -51,7 +51,8 @@ export function PlaylistDetailPage() {
     )
 
   const sync = async () => {
-    await enqueue([linkJob(c.kind, c.spotify_id, c.name)])
+    if (!c.requeue) return
+    await enqueue([requeueJob(c.requeue, c.name)])
     toast.success(`Syncing ${c.name}`, { action: { label: "View queue", onClick: () => navigate("/") } })
   }
   const capped = c.source === "embed" && c.tracks.length === 100
@@ -190,7 +191,12 @@ export function PlaylistDetailPage() {
         ]}
       />
 
-      <TrackSheet track={open} open={!!open} onOpenChange={(o) => !o && setOpen(null)} />
+      <TrackSheet
+        track={open}
+        retry={[{ name: c.name, requeue: c.requeue }]}
+        open={!!open}
+        onOpenChange={(o) => !o && setOpen(null)}
+      />
     </Page>
   )
 }

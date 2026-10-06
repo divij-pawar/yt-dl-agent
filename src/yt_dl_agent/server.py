@@ -30,16 +30,16 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import chat, cli, config, fixer, importer, llm, log, sources, spotify_url
+from . import chat, cli, config, fixer, history, importer, llm, log, sources, spotify_url
 from .library import sanitize
-from .library_index import _NOT_COLLECTIONS
+from .library_index import _NOT_COLLECTIONS, LibraryIndex
 from .models import Collection, Track
 
 DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
 # Caches that are collections on disk but aren't playlists or albums.
 _SPECIAL = {importer.IMPORTED_CACHE, fixer.ORPHANS_CACHE, importer.SOURCES_CACHE}
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
-_QUEUE_KINDS = {"playlist", "album", "track", "artist", "user"}
+_QUEUE_KINDS = {"playlist", "album", "track", "artist", "user", "top"}  # top: an artist's top tracks
 _RUN_KEYS = {"out", "workers", "bitrate", "links_only", "no_playlist", "no_album_lookup", "limit",
              "cookies_from_browser"}
 RECENT = 6
@@ -64,20 +64,21 @@ def _root() -> Path:
 # --- the queue -----------------------------------------------------------------------
 
 
-def _args(opts: dict | None) -> Namespace:
+def _args(job: chat.Job | None) -> Namespace:
     """A job's run options -> the argparse namespace cli.run_collection expects."""
-    o = config.defaults() | {"links_only": False, "limit": None} | (opts or {})
+    o = config.defaults() | {"links_only": False, "limit": None} | ((job.options if job else None) or {})
     return Namespace(out=Path(o["out"]), workers=max(1, int(o["workers"])), bitrate=int(o["bitrate"]),
                      links_only=bool(o["links_only"]), no_playlist=bool(o["no_playlist"]),
                      no_album_lookup=bool(o["no_album_lookup"]), limit=o["limit"] or None,
                      cookies_from_browser=o["cookies_from_browser"] or None,
-                     chat_mode=True, dry_run=False, undo=None)
+                     chat_mode=True, dry_run=False, undo=None,
+                     job={"id": job.id, "label": job.label.strip()} if job else None)  # for history.Run
 
 
 def _run_unit(kind, x) -> None:
     job = queue.current
     with library_lock:
-        cli.run_unit(_args(job.options if job else None))(kind, x)
+        cli.run_unit(_args(job))(kind, x)
 
 
 queue = chat.DownloadQueue(_run_unit)
@@ -240,6 +241,15 @@ def _collections(root: Path):
             continue
 
 
+def _clean_error(err: str | None) -> str | None:
+    """Errors saved by older versions can carry yt-dlp's colour codes, or predate an explanation that exists
+    now ("Unexpected error: ..."): explain those again, keeping the original if there's still nothing better."""
+    if not err or not ("\x1b[" in err or err.startswith("Unexpected error:")):
+        return err
+    better = log.explain(err.removeprefix("Unexpected error:").strip())
+    return err if better.startswith("Unexpected error") and "\x1b[" not in err else better
+
+
 def _summary(f: Path, c: Collection, root: Path) -> dict:
     m3u8 = f"{sanitize(c.name)}.m3u8"
     return {
@@ -248,6 +258,7 @@ def _summary(f: Path, c: Collection, root: Path) -> dict:
         "done": sum(t.status == "done" for t in c.tracks), "failed": sum(t.status == "failed" for t in c.tracks),
         "m3u8": m3u8 if c.kind == "playlist" and (root / m3u8).exists() else None,
         "updated": datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds"),
+        "requeue": history.requeue_for(c.kind, c.spotify_id, c.name, c.owner_or_artist, c.tracks),
     }
 
 
@@ -264,7 +275,16 @@ def collection(sid: str) -> dict:
     f = _root() / ".cache" / f"{sid}.json"
     if f.name in _NOT_COLLECTIONS or f.name in _SPECIAL or not f.exists():
         raise HTTPException(404, "No cached playlist or album with this ID.")
-    return json.loads(f.read_text("utf-8"))
+    c = Collection.model_validate_json(f.read_text("utf-8"))
+    for t in c.tracks:
+        t.error = _clean_error(t.error)
+    return c.model_dump() | {"requeue": history.requeue_for(c.kind, c.spotify_id, c.name, c.owner_or_artist, c.tracks)}
+
+
+def _added(f: Path) -> str:
+    """When the file appeared in the library: its creation time (kept when fix moves it)."""
+    st = f.stat()
+    return datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_ctime)).isoformat(timespec="seconds")
 
 
 @app.get("/api/library")
@@ -280,7 +300,8 @@ def library() -> list[dict]:
             if not (root / t.file_path).exists():
                 return
             s = songs[t.file_path] = {"path": t.file_path, "track": t.model_dump(), "in_collections": [],
-                                      "format": Path(t.file_path).suffix.lower(), "imported": False}
+                                      "format": Path(t.file_path).suffix.lower(), "imported": False,
+                                      "added": _added(root / t.file_path)}
         s["imported"] = s["imported"] or imported
         if coll and all(c["spotify_id"] != coll.spotify_id for c in s["in_collections"]):
             s["in_collections"].append({"spotify_id": coll.spotify_id, "name": coll.name, "kind": coll.kind})
@@ -296,6 +317,66 @@ def library() -> list[dict]:
         for t in special.tracks:
             add(t, None, imported=name == importer.IMPORTED_CACHE)
     return sorted(songs.values(), key=lambda s: s["path"].casefold())
+
+
+@app.get("/api/failed")
+def failed_songs() -> list[dict]:
+    """Songs that failed in some playlist/album and still aren't in the library, newest attempt first."""
+    root, out = _root(), {}
+    index = LibraryIndex(root)
+    for f, c in _collections(root):
+        tried = datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds")
+        requeue = history.requeue_for(c.kind, c.spotify_id, c.name, c.owner_or_artist, c.tracks)
+        for t in c.tracks:
+            if t.status != "failed" or index.find(t):  # failed here, but downloaded since by another run
+                continue
+            t.error = _clean_error(t.error)
+            e = out.setdefault(t.spotify_track_id or t.key, {"track": t.model_dump(), "error": t.error,
+                                                             "in_collections": [], "last_tried": tried})
+            e["in_collections"].append({"spotify_id": c.spotify_id, "name": c.name, "kind": c.kind, "requeue": requeue})
+            if tried > e["last_tried"]:
+                e["last_tried"], e["error"] = tried, t.error
+    return sorted(out.values(), key=lambda e: e["last_tried"], reverse=True)
+
+
+# --- run history -------------------------------------------------------------------------
+
+
+def _run_files(root: Path) -> list[Path]:
+    d = history.runs_dir(root)
+    files = d.glob("*.json") if d.exists() else []
+    return sorted((f for f in files if not f.name.startswith("_")), reverse=True)  # "_…": bookkeeping, not runs
+
+
+@app.get("/api/runs")
+def runs(limit: int = 300, job: str | None = None, spotify_id: str | None = None) -> list[dict]:
+    """Newest first, without the per-song lists (GET /api/runs/{id} has those). Logs from before history
+    existed are turned into records first (once)."""
+    history.backfill(_root(), _log_dir())
+    out = []
+    for f in _run_files(_root()):
+        try:
+            r = json.loads(f.read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+        if (job and (r.get("job") or {}).get("id") != job) or (spotify_id and r.get("spotify_id") != spotify_id):
+            continue
+        r.pop("tracks", None)
+        r.pop("removed", None)
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
+@app.get("/api/runs/{run_id}")
+def run_detail(run_id: str) -> dict:
+    f = history.runs_dir(_root()) / f"{run_id}.json"
+    if not re.fullmatch(r"[\w-]{1,120}", run_id) or run_id.startswith("_") or not f.exists():
+        raise HTTPException(404, "No such run.")
+    return json.loads(f.read_text("utf-8"))
+
+
 
 
 @app.get("/api/unsorted")

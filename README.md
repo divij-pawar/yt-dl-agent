@@ -115,7 +115,8 @@ Then open **http://127.0.0.1:8765**. It does everything the command line does:
 | Page | What it's for |
 |---|---|
 | **Request & queue** | Type requests in plain words or paste links, check what it understood, queue them. Watch the running job live: phase, release *n* of *m*, songs reused / downloaded / failed, retries. Profile links show a playlist picker. **Options** sets this run's flags. |
-| **Songs** | The whole library: search, filter (in `Singles/`, in no playlist, imported, lossless), and details per song: file, tags, the matched YouTube video, which playlists use it. |
+| **History** | Every run, song by song: **downloaded**, **already in library** (skipped), **failed** with the reason, **removed** on Spotify, or the run failed outright. Open a run for the full lists, its log, and **Retry failed songs**. **Details** on a finished queue job opens its runs. Runs from before History existed are rebuilt from their logs. **Downloaded songs** lists the whole library by the day each file arrived. |
+| **Songs** | The whole library: search, filter (in `Singles/`, in no playlist, imported, lossless, **failed**), and details per song: file, tags, the matched YouTube video, which playlists use it. A failed song shows why, and **Run "playlist" again** or **Download just this song**. |
 | **Playlists & albums** | Every downloaded playlist and album with its status. **Sync** re-reads it from Spotify and fetches only what's new or failed; **Sync all playlists** does them all. Failed songs show why, with their YouTube Music search. |
 | **Import files** / **Unsorted** | `import` with a **Preview** (dry run) first, results grouped as imported / upgraded / unsorted / already in library, and **Undo** for past imports. Unsorted lists files without a confident match, with the reason and any likely match. |
 | **Fix library** | `fix`, with a preview of every album change and file move before you apply it. |
@@ -309,7 +310,11 @@ Up to date: all 21 songs already in the library; nothing to download
   `.m3u8` points at the existing file.
 - **Removed songs:** they're left out of the rewritten `.m3u8`, and the run says how many. The MP3s
   themselves are kept, since other playlists may use them.
-- **Failed songs** are retried on the next run.
+- **Failed songs** are retried on the next run. The web UI lists them under **Failed songs**, with one-click
+  retries.
+- **Run history:** every run is recorded song by song in `songs/.cache/runs/` (downloaded, already in
+  the library, failed and why, removed), from the command line, chat and the web UI alike. The web UI's
+  **History** page shows it.
 - **Album lookups** are cached in `songs/.cache/albums.json`, so known songs cost no Tavily credits.
 - Deleted an MP3 by hand? It's simply downloaded again on the next run.
 

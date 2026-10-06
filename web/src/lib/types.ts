@@ -51,6 +51,15 @@ export interface CollectionSummary {
   failed: number
   m3u8: string | null // songs/<Playlist Name>.m3u8, playlists only
   updated: string // mtime of the cache file, ISO
+  requeue: Requeue | null // how to run it again (null: imports and other special caches)
+}
+
+/** history.requeue_for: what to queue to run a collection again. A link usually; "top" re-runs an
+ *  artist's top tracks (a plain artist link would mean the whole discography); a request for songs
+ *  that were only found by searching. */
+export interface Requeue {
+  link?: [LinkKind, string]
+  request?: ParsedRequest
 }
 
 // --- llm.py / chat.py ----------------------------------------------------------
@@ -64,8 +73,8 @@ export interface ParsedRequest {
   title: string | null
 }
 
-/** spotify_url.parse() kinds, plus the chat-only library tools */
-export type LinkKind = "playlist" | "album" | "track" | "artist" | "user" | "import" | "fix"
+/** spotify_url.parse() kinds, plus "top" (an artist's top tracks) and the chat-only library tools */
+export type LinkKind = "playlist" | "album" | "track" | "artist" | "user" | "top" | "import" | "fix"
 
 export type JobStatus = "queued" | "working" | "done" | "failed"
 
@@ -135,6 +144,58 @@ export interface LibrarySong {
   in_collections: { spotify_id: string; name: string; kind: CollectionKind }[]
   format: string // .mp3 .m4a .flac .opus .ogg .wav (tags.AUDIO_EXTS)
   imported: boolean // from .cache/imported.json
+  added: string // when the file appeared in the library (its creation time)
+}
+
+/** A song that failed in some playlist/album and still isn't in the library (GET /api/failed). */
+export interface FailedSong {
+  track: Track
+  error: string | null // from the most recent attempt
+  in_collections: { spotify_id: string; name: string; kind: CollectionKind; requeue: Requeue | null }[]
+  last_tried: string
+}
+
+// --- history.py ------------------------------------------------------------------
+
+/** downloaded: fetched this run · reused: already in the library, so skipped · failed · links: --links-only */
+export type RunOutcome = "downloaded" | "reused" | "failed" | "links"
+
+export interface RunTrack {
+  outcome: RunOutcome
+  title: string
+  artist: string
+  album: string | null
+  spotify_track_id: string | null
+  file_path: string | null
+  duration_s: number | null
+  error: string | null
+  search_url: string | null
+}
+
+/** One playlist/album/track run: songs/.cache/runs/<id>.json. The list endpoint leaves out tracks/removed. */
+export interface RunSummary {
+  id: string
+  started: string
+  finished: string | null
+  status: "ok" | "failed" | "error" | "interrupted" // failed: some songs failed · error: the run itself failed
+  kind: CollectionKind
+  spotify_id: string
+  name: string
+  owner: string | null
+  source: CollectionSource | null
+  options: Partial<RunOptions>
+  log: string | null // logs/<name>
+  job: { id: string; label: string } | null // the queue job it ran in
+  counts: { total: number; downloaded: number; reused: number; failed: number; removed: number }
+  playlist_file: string | null
+  error: string | null
+  requeue: Requeue | null
+  from_log?: boolean // rebuilt from a log written before history existed
+}
+
+export interface RunRecord extends RunSummary {
+  tracks: RunTrack[]
+  removed: { title: string; artist: string }[]
 }
 
 // --- importer.py -----------------------------------------------------------------

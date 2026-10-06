@@ -5,6 +5,7 @@ import {
   FileClockIcon,
   FolderInputIcon,
   FolderSearchIcon,
+  HistoryIcon,
   LibraryIcon,
   ListMusicIcon,
   SearchIcon,
@@ -29,6 +30,8 @@ import { useLoad } from "@/lib/hooks"
 
 const PAGES = [
   { to: "/", label: "Request & queue", icon: DownloadIcon },
+  { to: "/history", label: "History: what each run downloaded, skipped or failed", icon: HistoryIcon },
+  { to: "/library?show=failed", label: "Failed songs", icon: LibraryIcon },
   { to: "/library", label: "Songs", icon: LibraryIcon },
   { to: "/playlists", label: "Playlists & albums", icon: ListMusicIcon },
   { to: "/import", label: "Import files", icon: FolderInputIcon },

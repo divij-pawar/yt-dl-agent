@@ -25,6 +25,7 @@ const TITLES: Record<string, string> = {
   logs: "Run logs",
   settings: "Settings",
   help: "Help & docs",
+  history: "History",
 }
 
 export function SiteHeader({ crumb }: { crumb?: string }) {

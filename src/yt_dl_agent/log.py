@@ -5,6 +5,7 @@ lines, every retry with the raw error, yt-dlp's own messages tagged with the tra
 """
 
 import logging
+import re
 from logging import INFO, WARNING  # noqa: F401 - re-exported for log.detail(..., log.INFO)
 from datetime import datetime
 from pathlib import Path
@@ -117,12 +118,17 @@ _EXPLANATIONS = [
 ]
 
 
+_ANSI = re.compile(r"\[[0-9;]*m")
+
+
 def explain(err: BaseException | str) -> str:
     """Turn a raw exception/message into one plain-language line."""
     raw = f"{type(err).__name__}: {err}" if isinstance(err, BaseException) else str(err)
+    raw = _ANSI.sub("", raw)  # yt-dlp colours its errors: "[0;31mERROR:[0m ..."
     low = raw.lower()
     for needle, text in _EXPLANATIONS:
         if needle in low:
             return text
-    first = str(err).strip().splitlines()[0] if str(err).strip() else type(err).__name__
+    msg = _ANSI.sub("", str(err)).strip()
+    first = msg.splitlines()[0] if msg else type(err).__name__
     return f"Unexpected error: {first.removeprefix('ERROR: ')[:200]}"

@@ -1,11 +1,13 @@
 import {
   AudioLinesIcon,
+  CircleAlertIcon,
   CircleHelpIcon,
   ChevronRightIcon,
   DownloadIcon,
   FileClockIcon,
   FolderInputIcon,
   FolderSearchIcon,
+  HistoryIcon,
   LibraryIcon,
   ListMusicIcon,
   SettingsIcon,
@@ -39,11 +41,13 @@ import { useQueue } from "@/lib/queue"
 const PINNED_PLAYLISTS = 6
 
 export function AppSidebar() {
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
+  const showingFailed = pathname === "/library" && search.includes("show=failed")
   const { pending } = useQueue()
   const collections = useLoad(() => api.collections())
   const library = useLoad(() => api.library())
   const unsorted = useLoad(() => api.unsorted())
+  const failed = useLoad(() => api.failed())
   const health = useLoad(() => api.health())
 
   const playlists = (collections.data ?? [])
@@ -83,6 +87,12 @@ export function AppSidebar() {
                 </SidebarMenuButton>
                 {pending > 0 && <SidebarMenuBadge>{pending}</SidebarMenuBadge>}
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={is("/history")} tooltip="History" render={<NavLink to="/history" />}>
+                  <HistoryIcon />
+                  <span>History</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -92,12 +102,21 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={is("/library")} tooltip="Songs" render={<NavLink to="/library" />}>
+                <SidebarMenuButton isActive={is("/library") && !showingFailed} tooltip="Songs" render={<NavLink to="/library" />}>
                   <LibraryIcon />
                   <span>Songs</span>
                 </SidebarMenuButton>
                 {library.data && <SidebarMenuBadge>{library.data.length}</SidebarMenuBadge>}
               </SidebarMenuItem>
+              {!!failed.data?.length && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive={showingFailed} tooltip="Failed songs" render={<NavLink to="/library?show=failed" />}>
+                    <CircleAlertIcon />
+                    <span>Failed songs</span>
+                  </SidebarMenuButton>
+                  <SidebarMenuBadge className="text-destructive">{failed.data.length}</SidebarMenuBadge>
+                </SidebarMenuItem>
+              )}
 
               <Collapsible defaultOpen render={<SidebarMenuItem />}>
                 <SidebarMenuButton

@@ -6,7 +6,8 @@ it with `yt-dl-agent serve` (see the main [README](../README.md#web-ui)). This f
 | Screen | Route | Backend |
 |---|---|---|
 | Request & queue | `/` | `chat.parse_line` → "I understood" → `chat.DownloadQueue`; profile links use `sources.user_playlists`; Options = the run flags of `cli.main` |
-| Songs | `/library` | every cached collection, joined into one row per file |
+| History | `/history` | `songs/.cache/runs/*.json` (`history.py`); retries via each run's `requeue` |
+| Songs | `/library` | every cached collection, joined into one row per file; `?show=failed` lists `GET /api/failed` |
 | Playlists & albums | `/playlists`, `/playlists/:id` | `songs/.cache/<id>.json`; Sync = queue the link again |
 | Import files | `/import` | `importer.run_import` (Preview = dry run), history and `importer.undo` |
 | Unsorted | `/unsorted` | `.cache/unsorted.json` |

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { AlertTriangleIcon, CheckIcon, ExternalLinkIcon, InboxIcon, RotateCcwIcon, XIcon } from "lucide-react"
+import { AlertTriangleIcon, CheckIcon, ExternalLinkIcon, HistoryIcon, InboxIcon, RotateCcwIcon, XIcon } from "lucide-react"
 import { NavLink } from "react-router-dom"
 import { JobStatusBadge, KindBadge, SourceBadge } from "@/components/status"
 import { Button } from "@/components/ui/button"
@@ -242,6 +242,15 @@ function FinishedRow({ job, onRequeue }: { job: Job; onRequeue: () => void }) {
         )}
       </div>
       <span className="hidden text-xs text-muted-foreground sm:block">{when(job.queued_at)}</span>
+      <Tooltip>
+        <TooltipTrigger
+          render={<Button variant="ghost" size="sm" aria-label="What happened" render={<NavLink to={`/history?job=${job.id}`} />} />}
+        >
+          <HistoryIcon />
+          <span className="hidden md:inline">Details</span>
+        </TooltipTrigger>
+        <TooltipContent>Song by song: downloaded, already in the library, failed</TooltipContent>
+      </Tooltip>
       {target && "id" in target && job.units.length === 1 && (
         <Button variant="ghost" size="icon-sm" aria-label="Open" render={<NavLink to={`/playlists/${target.id}`} />}>
           <ExternalLinkIcon />

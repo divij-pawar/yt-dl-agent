@@ -4,6 +4,7 @@
 import type {
   Collection,
   CollectionSummary,
+  FailedSong,
   FixReport,
   ImportManifest,
   ImportResult,
@@ -12,6 +13,7 @@ import type {
   LogLine,
   LogRun,
   ProfilePlaylist,
+  RunRecord,
   ServiceHealth,
   Settings,
   Track,
@@ -257,6 +259,7 @@ function summarize(c: Collection, updated: string): CollectionSummary {
     failed: c.tracks.filter((x) => x.status === "failed").length,
     m3u8: c.kind === "playlist" ? `${c.name}.m3u8` : null,
     updated,
+    requeue: { link: [c.kind, c.spotify_id] },
   }
 }
 
@@ -276,6 +279,7 @@ export const collectionSummaries: CollectionSummary[] = [
       failed,
       m3u8: `${name}.m3u8`,
       updated: `2026-10-0${1 + (i % 5)}T1${i % 10}:20:00`,
+      requeue: { link: ["playlist", `pl${String(i).padStart(20, "0")}`] as [ "playlist", string ] },
     }
   }),
 ]
@@ -288,7 +292,15 @@ export const librarySongs: LibrarySong[] = (() => {
       const hit = byPath.get(tr.file_path)
       const ref = { spotify_id: c.spotify_id, name: c.name, kind: c.kind }
       if (hit) hit.in_collections.push(ref)
-      else byPath.set(tr.file_path, { path: tr.file_path, track: tr, in_collections: [ref], format: ".mp3", imported: false })
+      else
+        byPath.set(tr.file_path, {
+          path: tr.file_path,
+          track: tr,
+          in_collections: [ref],
+          format: ".mp3",
+          imported: false,
+          added: `2026-10-0${1 + (byPath.size % 6)}T1${byPath.size % 10}:${String(byPath.size % 60).padStart(2, "0")}:00`,
+        })
     }
   }
   const imported = t("Kitida Navyane", "Aarya Ambekar", "Ti Saddhya Kay Karte (Original Motion Picture Soundtrack)", 274, {
@@ -296,7 +308,7 @@ export const librarySongs: LibrarySong[] = (() => {
     track_no: 3,
     year: 2017,
   })
-  byPath.set(imported.file_path!, { path: imported.file_path!, track: imported, in_collections: [], format: ".flac", imported: true })
+  byPath.set(imported.file_path!, { path: imported.file_path!, track: imported, in_collections: [], format: ".flac", imported: true, added: "2026-10-05T21:14:02" })
   return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path))
 })()
 
@@ -640,3 +652,90 @@ export const settings: Settings = {
     log_dir: "logs",
   },
 }
+
+// --- run history (history.py) ------------------------------------------------------
+
+function runFrom(
+  c: Collection,
+  started: string,
+  { downloaded = 0, removed = [] as { title: string; artist: string }[], job = null as RunRecord["job"] } = {},
+): RunRecord {
+  let fresh = 0
+  const tracks = c.tracks.map((tr) => {
+    const outcome = tr.status === "failed" ? "failed" : fresh++ < downloaded ? "downloaded" : "reused"
+    return {
+      outcome: outcome as RunRecord["tracks"][number]["outcome"],
+      title: tr.title,
+      artist: tr.artist,
+      album: tr.album,
+      spotify_track_id: tr.spotify_track_id,
+      file_path: tr.file_path,
+      duration_s: tr.duration_s,
+      error: tr.error,
+      search_url: tr.search_url,
+    }
+  })
+  const n = (o: string) => tracks.filter((x) => x.outcome === o).length
+  return {
+    id: `${started.replace(/[-:T]/g, "").slice(0, 8)}-${started.slice(11).replace(/:/g, "")}-000000-${c.spotify_id}`,
+    started,
+    finished: started.replace(/:(\d\d)$/, (_, s) => `:${String(Math.min(59, Number(s) + 40)).padStart(2, "0")}`),
+    status: n("failed") ? "failed" : "ok",
+    kind: c.kind,
+    spotify_id: c.spotify_id,
+    name: c.name,
+    owner: c.owner_or_artist,
+    source: c.source,
+    options: { workers: 4, bitrate: 320 },
+    log: "run-20261006-160102.log",
+    job,
+    counts: { total: tracks.length, downloaded: n("downloaded"), reused: n("reused"), failed: n("failed"), removed: removed.length },
+    playlist_file: c.kind === "playlist" ? `${c.name}.m3u8` : null,
+    error: null,
+    requeue: { link: [c.kind, c.spotify_id] },
+    tracks,
+    removed,
+  }
+}
+
+const [overnight, night, preachers, jim, oldSchool, desi] = collections
+
+export const runs: RunRecord[] = [
+  runFrom(desi, "2026-10-06T16:05:12", { downloaded: 2, job: { id: "j9", label: "link         playlist 0dJ3ahRDM8sL4DGZVIcSC5" } }),
+  {
+    ...runFrom(overnight, "2026-10-06T16:04:40"),
+    id: "20261006-160440-000000-0000000000000000000000",
+    status: "error",
+    spotify_id: "0000000000000000000000",
+    name: "0000000000000000000000",
+    owner: null,
+    source: null,
+    playlist_file: null,
+    error: "Unexpected error: couldn't get the track list from any source.",
+    counts: { total: 0, downloaded: 0, reused: 0, failed: 0, removed: 0 },
+    tracks: [],
+    requeue: { link: ["playlist", "0000000000000000000000"] },
+  },
+  runFrom(preachers, "2026-10-06T16:02:30", { downloaded: 13, job: { id: "j2", label: "album        \"Preacher's Daughter\" by Ethel Cain" } }),
+  runFrom(overnight, "2026-10-06T15:59:37", { job: { id: "j1", label: "link         playlist 40R99ocNHdnFIcGTPT4ZB7" } }),
+  runFrom(night, "2026-10-05T22:14:03", {
+    downloaded: 3,
+    removed: [
+      { title: "Somewhere Only We Know", artist: "Keane" },
+      { title: "Electric Feel", artist: "MGMT" },
+    ],
+  }),
+  runFrom(jim, "2026-10-05T19:40:51", { downloaded: 9 }),
+  runFrom(oldSchool, "2026-10-04T21:02:10"),
+]
+
+export const failedSongs: FailedSong[] = collections.flatMap((c) =>
+  c.tracks
+    .filter((tr) => tr.status === "failed")
+    .map((tr) => ({
+      track: tr,
+      error: tr.error,
+      in_collections: [{ spotify_id: c.spotify_id, name: c.name, kind: c.kind, requeue: { link: [c.kind, c.spotify_id] as [typeof c.kind, string] } }],
+      last_tried: "2026-10-06T16:05:12",
+    })),
+)

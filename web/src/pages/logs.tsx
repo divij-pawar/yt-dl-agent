@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { SearchIcon } from "lucide-react"
 import { Page } from "@/components/page"
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +19,8 @@ const RANK: Record<LogLevel, number> = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3
 /** logs/run-*.log: the console's plain lines plus matches, retries, yt-dlp output and tracebacks. */
 export function LogsPage() {
   const runs = useLoad(() => api.logRuns())
-  const [selected, setSelected] = useState<string | null>(null)
+  const [params] = useSearchParams()
+  const [selected, setSelected] = useState<string | null>(params.get("name")) // History links to a run's log
   const name = selected ?? runs.data?.[0]?.name ?? null
   const lines = useLoad(() => (name ? api.logLines(name) : Promise.resolve([])), [name])
   const [min, setMin] = useState<LogLevel>("DEBUG")

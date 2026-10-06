@@ -161,6 +161,7 @@ yt-dl-agent/
 └── src/yt_dl_agent/
     ├── cli.py               # entry point, orchestration, progress, summary; `serve` starts server.py
     ├── server.py            # FastAPI: the web UI's API (web/src/lib/api.ts), and serves web/dist
+    ├── history.py           # run records, song by song: songs/.cache/runs/*.json
     ├── config.py            # run defaults from .env (YTDL_*), shared by CLI and web UI; .env writes
     ├── chat.py              # chat REPL / --ask: parse → confirm → queue → one job at a time
     ├── catalog.py           # find artists/albums/tracks by name (Tavily Search), artist discographies
@@ -273,6 +274,8 @@ Requires Python 3.12+, ffmpeg on PATH, a JS runtime (deno or node), and Ollama r
 | `POST /api/import`, `GET /api/imports`, `POST /api/imports/{name}/undo` | `importer.run_import`, `.cache/imports/`, `importer.undo` |
 | `GET /api/unsorted` | `.cache/unsorted.json` |
 | `POST /api/fix` | `fixer.run_fix`, which returns its report |
+| `GET /api/runs[/{id}]` | `songs/.cache/runs/*.json` (history.py), newest first; `?job=` for one queue job |
+| `GET /api/failed` | failed tracks across all collections that still aren't in the library, with where they failed |
 | `GET /api/logs[/{name}]` | `logs/run-*.log`, parsed |
 | `GET /api/health`, `GET`/`PUT /api/settings` | service checks; `.env` through `config.py` |
 
@@ -287,6 +290,16 @@ Design points:
   `log.event("phase" | "collection" | "track" | "retry", ...)`, a no-op unless something listens. The
   server turns these into the running job's progress. `log.say` emits an event too, so `/api/parse` can
   return the messages the CLI would have printed (for example, that Ollama isn't reachable).
+- **History is written by the CLI, not the server.** `cli.run_collection` saves a `history.Run` for every
+  collection, including runs that fail before reading the track list, so CLI, chat and web runs all show
+  up. Each track is `downloaded`, `reused` (already in the library, so skipped), `failed` (with the
+  reason) or `links`, plus the songs removed since the last run. Records carry the queue job id when there
+  is one, and a `requeue` hint: how to run the collection again. That's usually its link; an artist's
+  top tracks become a `top` link (a plain artist link would mean the whole discography), and songs that
+  were only found by search are re-queued as the original request.
+  Logs from before history existed are turned into records once (`history.backfill`, on the first
+  `GET /api/runs`), marked `from_log`: the log names what was downloaded and failed and how many were
+  reused; which songs were reused comes from the collection's cache.
 - **Local only.** Requests whose `Host` or `Origin` isn't localhost get 403, so other web pages can't
   drive the app (CSRF, DNS rebinding). Secrets come back masked, and a masked value sent back unchanged
   keeps the stored key.
