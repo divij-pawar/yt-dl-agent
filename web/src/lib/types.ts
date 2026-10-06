@@ -1,0 +1,243 @@
+// Mirrors of the Python backend's data, field for field. Source of truth is noted on each type;
+// when the backend changes, change these first and let the compiler show what else must follow.
+
+// --- models.py ---------------------------------------------------------------
+
+export type TrackStatus = "pending" | "done" | "failed"
+
+/** models.Track */
+export interface Track {
+  title: string
+  artist: string // all credited artists, comma-separated
+  album: string | null
+  album_artist: string | null
+  track_no: number | null
+  duration_s: number | null
+  explicit: boolean
+  spotify_track_id: string | null
+  album_id: string | null
+  year: number | null
+  cover_url: string | null
+  search_url: string | null
+  video_id: string | null
+  file_path: string | null // relative to the songs root
+  status: TrackStatus
+  error: string | null
+}
+
+export type CollectionKind = "playlist" | "album" | "track" | "artist"
+/** Where the track list came from: sources.resolve() tries them in this order. */
+export type CollectionSource = "spotify-api" | "embed" | "tavily" | "search" | "import"
+
+/** models.Collection, as cached in songs/.cache/<spotify_id>.json */
+export interface Collection {
+  kind: CollectionKind
+  spotify_id: string
+  name: string
+  owner_or_artist: string | null
+  source: CollectionSource
+  tracks: Track[]
+}
+
+/** A Collection without its tracks, for lists. Added by the API layer. */
+export interface CollectionSummary {
+  kind: CollectionKind
+  spotify_id: string
+  name: string
+  owner_or_artist: string | null
+  source: CollectionSource
+  total: number
+  done: number
+  failed: number
+  m3u8: string | null // songs/<Playlist Name>.m3u8, playlists only
+  updated: string // mtime of the cache file, ISO
+}
+
+// --- llm.py / chat.py ----------------------------------------------------------
+
+/** llm.Request: what the small model (or the explicit "kind: …" syntax) understood */
+export type RequestKind = "song" | "album" | "discography" | "albums" | "top"
+
+export interface ParsedRequest {
+  kind: RequestKind
+  artist: string
+  title: string | null
+}
+
+/** spotify_url.parse() kinds, plus the chat-only library tools */
+export type LinkKind = "playlist" | "album" | "track" | "artist" | "user" | "import" | "fix"
+
+export type JobStatus = "queued" | "working" | "done" | "failed"
+
+/** How a line became a job: chat.parse_line() checks links, then explicit syntax, then the model. */
+export type ParsedVia = "link" | "explicit" | "model"
+
+/** chat.Job */
+export interface Job {
+  id: string // API layer: stable id for the UI
+  label: string
+  request: ParsedRequest | null
+  link: [LinkKind, string] | null
+  status: JobStatus
+  note: string
+  units: Unit[]
+  // API layer additions, reported by the queue worker while the job runs:
+  via: ParsedVia
+  unit_index: number // 1-based index of the unit running now
+  progress: UnitProgress | null
+  queued_at: string
+}
+
+/** A unit of work, as chat.expand() returns it. "bare" = a song Spotify search couldn't find. */
+export type Unit =
+  | { kind: "playlist" | "album" | "track" | "artist"; id: string; name?: string | null }
+  | { kind: "bare"; track: Pick<Track, "title" | "artist"> }
+  | { kind: "import"; paths: string[] }
+  | { kind: "fix" }
+
+/** cli.run_collection() for the unit running now. */
+export interface UnitProgress {
+  collection: string // "playlist 'Overnight' by Divij Pawar"
+  source: CollectionSource | null // null until the track list is read
+  total: number
+  reused: number // already in the library (LibraryIndex hit)
+  done: number
+  failed: number
+  phase: "resolving" | "albums" | "links" | "downloading" | "playlist" | "finished"
+  recent: { label: string; ok: boolean; error?: string; retry?: string }[]
+}
+
+/** Spotify profile playlists, from sources.user_playlists(): for --list / --match */
+export interface ProfilePlaylist {
+  name: string
+  id: string
+}
+
+/** CLI flags that shape one run (cli.main). */
+export interface RunOptions {
+  out: string
+  workers: number
+  bitrate: number
+  links_only: boolean
+  no_playlist: boolean
+  no_album_lookup: boolean
+  limit: number | null
+  cookies_from_browser: string | null
+  yes: boolean // chat: skip "Queue this?"
+}
+
+// --- library_index.py ------------------------------------------------------------
+
+/** One song file in the library, joined from library.json + every cached collection. */
+export interface LibrarySong {
+  path: string // Artist/Album/NN - Title.mp3
+  track: Track
+  in_collections: { spotify_id: string; name: string; kind: CollectionKind }[]
+  format: string // .mp3 .m4a .flac .opus .ogg .wav (tags.AUDIO_EXTS)
+  imported: boolean // from .cache/imported.json
+}
+
+// --- importer.py -----------------------------------------------------------------
+
+export type PlanStatus = "matched" | "unsorted" | "duplicate" | "better" | "still" | "error"
+
+/** importer.Plan, as reported after a run or a dry run */
+export interface ImportPlan {
+  src: string
+  status: PlanStatus
+  dest: string | null
+  replaced: string | null // _Replaced/<old path>, when status = better
+  reason: string
+  suggestion: string // "Artist - Title (Spotify 214s, file 230s): https://open.spotify.com/track/…"
+  guesses: [string | null, string][]
+  model_guess: [string, string] | null
+  track: Track | null
+}
+
+export interface ImportResult {
+  dry_run: boolean
+  files: number
+  skipped_unchanged: number
+  plans: ImportPlan[]
+  manifest: string | null // .cache/imports/<timestamp>.json, for undo
+}
+
+/** .cache/imports/<timestamp>.json (renamed *.undone.json once undone) */
+export interface ImportManifest {
+  name: string
+  when: string
+  mode: "copy" | "move"
+  undone: boolean
+  items: { src: string; dest: string; status: "matched" | "better" | "unsorted"; replaced: string | null }[]
+}
+
+/** .cache/unsorted.json, keyed by library-relative path under _Unsorted/ */
+export interface UnsortedEntry {
+  path: string
+  src: string
+  reason: string
+  suggestion: string
+  guesses: [string | null, string][]
+  when: string
+}
+
+// --- fixer.py ----------------------------------------------------------------------
+
+export interface FixChange {
+  old: string
+  new: string | null // set when the file moves/renames
+  album: [string, string] | null // [before, after]
+  cover: boolean
+  error: string | null
+}
+
+export interface FixReport {
+  dry_run: boolean
+  songs: number
+  albums_corrected: number
+  covers_set: number
+  moved: number
+  errors: number
+  changes: FixChange[]
+  unsorted_retry: ImportResult | null
+}
+
+// --- log.py ------------------------------------------------------------------------
+
+export type LogLevel = "DEBUG" | "INFO" | "WARNING" | "ERROR"
+
+export interface LogRun {
+  name: string // run-YYYYmmdd-HHMMSS.log
+  started: string
+  args: string // cli args summary
+  lines: number
+  warnings: number
+}
+
+export interface LogLine {
+  time: string
+  level: LogLevel
+  thread: string // MainThread | queue | ThreadPoolExecutor-0_1
+  message: string
+}
+
+// --- environment (.env + README requirements) -------------------------------------
+
+export type HealthState = "ok" | "degraded" | "down" | "unknown"
+
+export interface ServiceHealth {
+  id: "spotify" | "tavily" | "ollama" | "ffmpeg" | "js" | "ytdlp"
+  name: string
+  state: HealthState
+  detail: string
+  fix?: string // plain-language fix, from log._EXPLANATIONS / README troubleshooting
+}
+
+export interface Settings {
+  TAVILY_API_KEY: string
+  OLLAMA_HOST: string
+  OLLAMA_MODEL: string
+  SPOTIFY_CLIENT_ID: string
+  SPOTIFY_CLIENT_SECRET: string
+  defaults: RunOptions & { log_dir: string }
+}

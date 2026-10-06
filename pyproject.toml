@@ -1,0 +1,26 @@
+[project]
+name = "yt-dl-agent"
+version = "0.1.0"
+description = "Spotify playlist/album -> YouTube Music search links -> MP3 library"
+requires-python = ">=3.12"
+dependencies = [
+    "tavily-python",
+    "ollama",
+    "pydantic>=2",
+    "yt-dlp[default]==2026.8.19",
+    "mutagen",
+    "python-dotenv",
+    "rich",
+    "fastapi",
+    "uvicorn",
+]
+
+[project.scripts]
+yt-dl-agent = "yt_dl_agent.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yt_dl_agent"]
