@@ -656,6 +656,7 @@ export const settings: Settings = {
     limit: null,
     cookies_from_browser: null,
     yes: false,
+    preview_links: true,
     no_plex: false,
     log_dir: "logs",
   },

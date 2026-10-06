@@ -808,6 +808,7 @@ class DefaultsIn(BaseModel):
     yes: bool = False
     log_dir: str = "logs"
     no_plex: bool = False
+    preview_links: bool = True  # web UI: a pasted Spotify link opens its preview
 
 
 class SettingsIn(BaseModel):

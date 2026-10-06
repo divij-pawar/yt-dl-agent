@@ -134,6 +134,13 @@ export function tracksJob(ids: string[], from: string, names: string[] = []): Jo
   return j
 }
 
+/** The preview route when the text is nothing but one Spotify playlist/album/track/artist link (e.g. pasted). */
+export function soleLinkPreview(text: string): string | null {
+  const t = text.trim()
+  const links = t.match(LINK) ?? []
+  return links.length === 1 && !t.replace(LINK, "").trim() ? previewPath(links[0]) : null
+}
+
 /** Spotify links the preview page understands -> its route. */
 export function previewPath(text: string): string | null {
   const m = URL_RE.exec(text)

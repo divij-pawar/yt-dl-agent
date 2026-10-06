@@ -92,8 +92,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     api.queue().then(setJobs)
     api.settings().then((s) => {
-      setDefaults(s.defaults)
-      setOptions(s.defaults)
+      // Settings added later are missing from an older server's reply: use their defaults.
+      const d = { ...s.defaults, preview_links: s.defaults.preview_links ?? true }
+      setDefaults(d)
+      setOptions(d)
     })
   }, [])
 

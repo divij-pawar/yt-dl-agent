@@ -26,8 +26,9 @@ import {
   CommandShortcut,
 } from "@/components/ui/command"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
-import { api, previewPath } from "@/lib/api"
+import { api, previewPath, soleLinkPreview } from "@/lib/api"
 import { useLoad } from "@/lib/hooks"
+import { useQueue } from "@/lib/queue"
 
 const PAGES = [
   { to: "/", label: "Request & queue", icon: DownloadIcon },
@@ -49,6 +50,8 @@ export function CommandPalette() {
   const [text, setText] = useState("")
   const navigate = useNavigate()
   const collections = useLoad(() => api.collections())
+  const { options } = useQueue()
+  const previewFirst = options.preview_links && !!soleLinkPreview(text)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -89,7 +92,20 @@ export function CommandPalette() {
         />
         <CommandList>
           <CommandEmpty>Nothing matches. Press Enter on “Request” to send it to the queue composer.</CommandEmpty>
-          {text.trim() && (
+          {text.trim() && previewFirst && (
+            <CommandGroup heading="Spotify link">
+              <CommandItem value={`preview ${text}`} onSelect={() => go(soleLinkPreview(text)!)}>
+                <EyeIcon />
+                Preview: see the songs and what's already in your library
+                <CommandShortcut>↵</CommandShortcut>
+              </CommandItem>
+              <CommandItem value={`request ${text}`} onSelect={() => go("/", { draft: text.trim() })}>
+                <DownloadIcon />
+                Skip the preview and send it to the queue composer
+              </CommandItem>
+            </CommandGroup>
+          )}
+          {text.trim() && !previewFirst && (
             <CommandGroup heading="Request">
               <CommandItem value={`request ${text}`} onSelect={() => go("/", { draft: text.trim() })}>
                 <DownloadIcon />

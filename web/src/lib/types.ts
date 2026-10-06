@@ -158,6 +158,7 @@ export interface RunOptions {
   limit: number | null
   cookies_from_browser: string | null
   yes: boolean // chat: skip "Queue this?"
+  preview_links: boolean // web UI: a pasted Spotify link opens its preview instead of "I understood" (YTDL_PREVIEW_LINKS)
   no_plex?: boolean // don't sync playlists to Plex after downloading (YTDL_NO_PLEX)
 }
 

@@ -197,6 +197,16 @@ export function SettingsPage() {
                 </Field>
                 <Field orientation="horizontal">
                   <FieldContent>
+                    <FieldLabel htmlFor="d-preview">Preview Spotify links first</FieldLabel>
+                    <FieldDescription>
+                      Pasting a playlist, album, song or artist link opens its preview: what's on it and what's already in your
+                      library. Download from there. Off = it goes straight to “I understood”.
+                    </FieldDescription>
+                  </FieldContent>
+                  <Switch id="d-preview" checked={s.defaults.preview_links ?? true} onCheckedChange={(c) => setD("preview_links", c)} />
+                </Field>
+                <Field orientation="horizontal">
+                  <FieldContent>
                     <FieldLabel htmlFor="d-yes">Confirm requests before queueing</FieldLabel>
                     <FieldDescription>Recommended: the small model sometimes misreads a request.</FieldDescription>
                   </FieldContent>

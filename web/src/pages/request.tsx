@@ -14,7 +14,7 @@ import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui
 import { Kbd } from "@/components/ui/kbd"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { api } from "@/lib/api"
+import { api, soleLinkPreview } from "@/lib/api"
 import { useQueue } from "@/lib/queue"
 import type { Job } from "@/lib/types"
 
@@ -39,6 +39,13 @@ export function RequestPage() {
   async function understand(input = text) {
     const lines = input.split("\n").map((l) => l.trim()).filter(Boolean)
     if (!lines.length) return
+    // Setting "Preview Spotify links first": a lone link opens its preview, where it can be downloaded.
+    const preview = options.preview_links && lines.length === 1 ? soleLinkPreview(lines[0]) : null
+    if (preview) {
+      setText("")
+      navigate(preview)
+      return
+    }
     setParsing(true)
     try {
       const results = await Promise.all(lines.map((l) => api.parse(l)))
@@ -93,6 +100,15 @@ export function RequestPage() {
             placeholder={"Tame Impala discography\nhttps://open.spotify.com/playlist/…"}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              // Pasting just a Spotify link into the empty box goes straight to its preview.
+              const pasted = e.clipboardData.getData("text")
+              const preview = options.preview_links && !text.trim() ? soleLinkPreview(pasted) : null
+              if (preview) {
+                e.preventDefault()
+                navigate(preview)
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
@@ -107,6 +123,16 @@ export function RequestPage() {
               <Switch id="confirm" checked={!options.yes} onCheckedChange={(c) => setOptions({ ...options, yes: !c })} />
               <Label htmlFor="confirm" className="text-xs font-normal text-muted-foreground">
                 Confirm before queueing
+              </Label>
+            </div>
+            <div className="flex items-center gap-2 pl-1">
+              <Switch
+                id="preview-links"
+                checked={options.preview_links}
+                onCheckedChange={(c) => setOptions({ ...options, preview_links: c })}
+              />
+              <Label htmlFor="preview-links" className="text-xs font-normal text-muted-foreground">
+                Preview Spotify links first
               </Label>
             </div>
             <span className="ml-auto hidden text-xs text-muted-foreground sm:inline">

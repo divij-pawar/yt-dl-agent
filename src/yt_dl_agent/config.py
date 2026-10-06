@@ -2,6 +2,7 @@
 
   YTDL_OUT=songs  YTDL_WORKERS=4  YTDL_BITRATE=320  YTDL_LOG_DIR=logs
   YTDL_NO_PLAYLIST=0  YTDL_NO_ALBUM_LOOKUP=0  YTDL_COOKIES_FROM_BROWSER=  YTDL_YES=0  YTDL_NO_PLEX=0
+  YTDL_PREVIEW_LINKS=1   web UI only: a pasted Spotify link opens its preview instead of "I understood"
 
 A flag on the command line still wins over these.
 """
@@ -28,6 +29,7 @@ DEFAULTS: dict[str, tuple[str, object]] = {
     "yes": ("YTDL_YES", False),
     "log_dir": ("YTDL_LOG_DIR", "logs"),
     "no_plex": ("YTDL_NO_PLEX", False),
+    "preview_links": ("YTDL_PREVIEW_LINKS", True),  # web UI only
 }
 
 

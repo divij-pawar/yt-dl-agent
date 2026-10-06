@@ -102,6 +102,7 @@ YTDL_NO_ALBUM_LOOKUP=0         # 1 = --no-album-lookup
 YTDL_COOKIES_FROM_BROWSER=     # e.g. chrome
 YTDL_YES=0                     # 1 = don't confirm chat requests
 YTDL_LOG_DIR=logs              # --log-dir
+YTDL_PREVIEW_LINKS=1           # web UI: a pasted Spotify link opens its preview (0 = straight to "I understood")
 ```
 
 ## Web UI
