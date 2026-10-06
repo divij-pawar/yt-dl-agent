@@ -99,7 +99,8 @@ YTDL_WORKERS=4                 # --workers
 YTDL_BITRATE=320               # --bitrate
 YTDL_NO_PLAYLIST=0             # 1 = --no-playlist
 YTDL_NO_ALBUM_LOOKUP=0         # 1 = --no-album-lookup
-YTDL_COOKIES_FROM_BROWSER=     # e.g. chrome
+YTDL_COOKIES_FROM_BROWSER=     # e.g. firefox (chrome usually can't be read on Windows)
+YTDL_COOKIES_FILE=             # --cookies: a cookies.txt export, the most reliable YouTube login
 YTDL_YES=0                     # 1 = don't confirm chat requests
 YTDL_LOG_DIR=logs              # --log-dir
 YTDL_PREVIEW_LINKS=1           # web UI: a pasted Spotify link opens its preview (0 = straight to "I understood")
@@ -283,7 +284,8 @@ Chat limits (without the Spotify API):
 | `--dry-run` | | `import` / `fix`: show what would change, change nothing |
 | `--no-plex` | `YTDL_NO_PLEX` | don't sync playlists to Plex after downloading |
 | `--undo [RUN]` | | `import`: reverse the last import (or a named one from `songs/.cache/imports/`) |
-| `--cookies-from-browser chrome` | | use your browser's YouTube login; with YT Music Premium the source audio is better |
+| `--cookies FILE` | | YouTube login from a cookies.txt export (most reliable; see [YouTube sign-in](#youtube-sign-in-cookies)) |
+| `--cookies-from-browser firefox` | | use your browser's YouTube login; with YT Music Premium the source audio is better. Chrome/Edge usually can't be read on Windows |
 | `--port N` | `8765` | `serve`: port for the web UI |
 
 The defaults for `--out`, `--workers`, `--bitrate`, `--no-playlist`, `--no-album-lookup`,
@@ -581,6 +583,28 @@ exact `album: <title> - <artist>` form or a link. The tracks that needed the alb
 `--no-album-lookup`, or when the Spotify API supplies albums, Ollama is only needed if the embed page
 and the Tavily text both fail to parse.
 
+## YouTube sign-in (cookies)
+
+YouTube sometimes answers "Sign in to confirm you're not a bot". A YouTube login gets past that, and with
+YT Music Premium it gives better source audio. If the login can't be read, downloads carry on without
+it (one warning per run) instead of failing.
+
+- **Chrome on Windows doesn't work.** Chrome locks its cookie database while it's open ("Could not copy
+  Chrome cookie database"), and newer versions encrypt cookies so only Chrome can read them, even when
+  it's closed. Edge and Brave run into the same problems.
+- **A cookies.txt file works everywhere** (recommended):
+  1. Install a cookies.txt exporter, e.g. "Get cookies.txt LOCALLY" (Chrome/Edge) or "cookies.txt" (Firefox),
+     and allow it in private windows.
+  2. Open a private/incognito window, sign in to youtube.com there, export its cookies in
+     Netscape/cookies.txt format, then close the window. (YouTube changes the cookies of normal tabs as
+     you browse, which can make an export stop working.)
+  3. Save it as e.g. `cookies.txt` in the project folder (gitignored). It signs in as you: keep it private.
+  4. Set it in the web UI (Settings → YouTube login → cookies.txt file), or `YTDL_COOKIES_FILE=cookies.txt`
+     in `.env`, or `--cookies cookies.txt`.
+- **Or Firefox:** sign in to YouTube in Firefox and use `--cookies-from-browser firefox`.
+
+Settings → Services → **YouTube login** checks that the login loads and is signed in.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -588,6 +612,7 @@ and the Tavily text both fail to parse.
 | `Spotify API 403: Active premium subscription required` | The Spotify app owner needs Premium. The app falls back automatically. It can take a few hours after subscribing before requests are allowed. |
 | `embed source caps at 100 tracks` | Playlist has more than 100 tracks and the Spotify API isn't available. Only the first 100 are fetched. |
 | `no confident match` for a track | Neither YouTube nor YouTube Music had a result close enough in title and duration. Usually a very obscure track or a region-locked upload. |
+| `Could not copy Chrome cookie database` / Chrome cookies not working | Chrome's cookies can't be read on Windows. Use a cookies.txt file or Firefox; see [YouTube sign-in](#youtube-sign-in-cookies). |
 | `retry 1/2 ...: YouTube refused the download (HTTP 403 Forbidden)` | YouTube refused one stream link. Common and usually harmless: the track is retried up to 2 more times. If it still fails, it's listed in the summary; rerun later to retry just those. |
 | `Spotify API not available: ... needs Premium (HTTP 403)` | Shown once per run. The app falls back to the embed page; see the Spotify API note above. |
 | Lots of failures at once | Possibly YouTube throttling. Try `--workers 2`, or update yt-dlp: `.venv\Scripts\python -m pip install -U "yt-dlp[default]"`. |

@@ -184,7 +184,8 @@ def _run_collection(kind: str, sid: str | None, args, coll: Collection | None, r
             with bar as prog:
                 task = prog.add_task("downloading", total=len(todo))
                 with ThreadPoolExecutor(max(1, args.workers)) as pool:
-                    futs = [pool.submit(download, t, root, args.bitrate, args.cookies_from_browser)
+                    futs = [pool.submit(download, t, root, args.bitrate, args.cookies_from_browser,
+                                        getattr(args, "cookies_file", None))
                             for t in todo]
                     for f in as_completed(futs):
                         t = f.result()
@@ -261,6 +262,8 @@ def main() -> None:
     p.add_argument("--list", action="store_true", help="profile links: list the playlists and stop")
     p.add_argument("--match", action="append", metavar="TEXT",
                    help="profile links: only playlists whose name contains TEXT (repeatable)")
+    p.add_argument("--cookies", dest="cookies_file", metavar="FILE", default=d["cookies_file"],
+                   help="YouTube login from a cookies.txt file (most reliable; wins over --cookies-from-browser)")
     p.add_argument("--cookies-from-browser", default=d["cookies_from_browser"],
                    help="e.g. chrome; YT Music Premium gives better source audio")
     p.add_argument("--log-dir", type=Path, default=Path(d["log_dir"]), help="where run logs are kept")

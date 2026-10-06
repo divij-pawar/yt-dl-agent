@@ -146,7 +146,7 @@ function TryAgain({ track: t, retry, onDone }: { track: Track; retry: RetryTarge
   const [busy, setBusy] = useState(false)
   const targets = retry.filter((r) => r.requeue)
   // Only worth saying when retries won't already use a browser login.
-  const botCheck = /sign-in|bot check/i.test(t.error ?? "") && !options.cookies_from_browser
+  const botCheck = /sign-in|bot check/i.test(t.error ?? "") && !options.cookies_from_browser && !options.cookies_file
   const run = (fn: () => Promise<void>) => async () => {
     setBusy(true)
     try {
@@ -166,7 +166,7 @@ function TryAgain({ track: t, retry, onDone }: { track: Track; retry: RetryTarge
       </Alert>
       {botCheck && (
         <p className="text-xs text-warning">
-          YouTube asked for a sign-in. Set “YouTube login from” in{" "}
+          YouTube asked for a sign-in. Add a YouTube login (a cookies.txt file works best) in{" "}
           <NavLink to="/settings" className="underline underline-offset-2">
             Settings
           </NavLink>{" "}

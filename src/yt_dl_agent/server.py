@@ -43,7 +43,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _QUEUE_KINDS = {"playlist", "album", "track", "artist", "user", "top", "tracks", "albums"}
 _SPOTIFY_ID = re.compile(r"[A-Za-z0-9]{22}")
 _RUN_KEYS = {"out", "workers", "bitrate", "links_only", "no_playlist", "no_album_lookup", "limit",
-             "cookies_from_browser", "no_plex"}
+             "cookies_from_browser", "cookies_file", "no_plex"}
 RECENT = 6
 
 app = FastAPI(title="yt-dl-agent", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
@@ -73,6 +73,7 @@ def _args(job: chat.Job | None) -> Namespace:
                      links_only=bool(o["links_only"]), no_playlist=bool(o["no_playlist"]),
                      no_album_lookup=bool(o["no_album_lookup"]), limit=o["limit"] or None,
                      cookies_from_browser=o["cookies_from_browser"] or None, no_plex=bool(o["no_plex"]),
+                     cookies_file=o.get("cookies_file") or None,
                      chat_mode=True, dry_run=False, undo=None,
                      job={"id": job.id, "label": job.label.strip()} if job else None)  # for history.Run
 
@@ -760,7 +761,15 @@ def _check_ytdlp() -> tuple:
     return "ok", __version__, None
 
 
+def _check_login() -> tuple:
+    from .download import check_login  # local: keeps yt-dlp's cookie code out of startup
+
+    d = config.defaults()
+    return check_login(d["cookies_from_browser"], d.get("cookies_file"))
+
+
 _CHECKS = [("spotify", "Spotify API", _check_spotify), ("tavily", "Tavily", _check_tavily),
+           ("login", "YouTube login", _check_login),
            ("ollama", "Ollama", _check_ollama), ("ffmpeg", "ffmpeg", _check_ffmpeg),
            ("js", "JS runtime", _check_js), ("ytdlp", "yt-dlp", _check_ytdlp), ("plex", "Plex", _check_plex)]
 
@@ -805,6 +814,7 @@ class DefaultsIn(BaseModel):
     no_playlist: bool = False
     no_album_lookup: bool = False
     cookies_from_browser: str | None = None
+    cookies_file: str | None = None  # a cookies.txt export; wins over the browser
     yes: bool = False
     log_dir: str = "logs"
     no_plex: bool = False

@@ -6,11 +6,10 @@ import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { LoginSelect, UnreliableBrowserNote } from "@/components/login-source"
 import type { RunOptions } from "@/lib/types"
 
-const BROWSERS = ["chrome", "firefox", "edge", "brave", "opera", "safari"]
 // Base UI's SelectValue shows the raw value unless the root knows each value's label.
-const BROWSER_ITEMS = { none: "No login", ...Object.fromEntries(BROWSERS.map((b) => [b, b])) }
 const BITRATE_ITEMS = { 320: "320 kbps (max)", 256: "256 kbps", 192: "192 kbps", 128: "128 kbps" }
 
 /** The non-default flags, as the CLI would spell them. */
@@ -22,7 +21,10 @@ export function changedFlags(o: RunOptions, d: RunOptions): string[] {
   if (o.no_playlist) out.push("--no-playlist")
   if (o.no_album_lookup) out.push("--no-album-lookup")
   if (o.limit) out.push(`--limit ${o.limit}`)
-  if (o.cookies_from_browser) out.push(`--cookies-from-browser ${o.cookies_from_browser}`)
+  if (o.cookies_file && o.cookies_file !== d.cookies_file) out.push(`--cookies "${o.cookies_file}"`)
+  if (!o.cookies_file && d.cookies_file) out.push("(no cookies file)")
+  if (o.cookies_from_browser !== d.cookies_from_browser && !o.cookies_file && o.cookies_from_browser)
+    out.push(`--cookies-from-browser ${o.cookies_from_browser}`)
   return out
 }
 
@@ -123,25 +125,14 @@ export function RunOptionsPopover({
             </Field>
             <Field>
               <FieldLabel>YouTube login from</FieldLabel>
-              <Select
-                items={BROWSER_ITEMS}
-                value={value.cookies_from_browser ?? "none"}
-                onValueChange={(v) => set("cookies_from_browser", v === "none" ? null : (v as string))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No login</SelectItem>
-                  {BROWSERS.map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {b}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <LoginSelect
+                value={value}
+                filePath={defaults.cookies_file}
+                onChange={(l) => onChange({ ...value, ...l })}
+              />
             </Field>
           </div>
+          <UnreliableBrowserNote browser={value.cookies_file ? null : value.cookies_from_browser} />
           <FieldDescription className="-mt-2 text-xs">
             With YT Music Premium, a browser login gives better source audio and avoids bot checks.
           </FieldDescription>

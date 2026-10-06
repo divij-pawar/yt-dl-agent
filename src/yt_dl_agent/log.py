@@ -94,14 +94,24 @@ class YtdlpLogger:
 
 # (substring in the raw error, lowercased) -> plain-language explanation
 _EXPLANATIONS = [
+    ("could not copy chrome cookie database",
+     "Chrome's cookies can't be read: Chrome locks them while it's open, and on Windows newer versions encrypt them "
+     "for Chrome alone. Use a cookies.txt file or Firefox for the YouTube login instead (Settings)."),
+    ("failed to decrypt with dpapi",
+     "The browser's cookies are encrypted so only that browser can read them (Chrome/Edge on Windows). Use a "
+     "cookies.txt file or Firefox for the YouTube login instead (Settings)."),
+    ("app-bound encryption",
+     "The browser's cookies are encrypted so only that browser can read them. Use a cookies.txt file or Firefox."),
+    ("netscape format", "The cookies file isn't in cookies.txt (Netscape) format. Export it again with a cookies.txt extension."),
+    ("failed to load cookies", "Couldn't read the YouTube login (cookies). Use a cookies.txt file or Firefox (Settings)."),
     ("active premium subscription required",
      "the Spotify developer account that owns the app needs Premium (HTTP 403). "
      "After subscribing it can take a few hours to start working."),
     ("http error 403", "YouTube refused the download (HTTP 403 Forbidden). Usually temporary; "
                        "rerun later, lower --workers, or update yt-dlp."),
     ("http error 429", "YouTube is rate-limiting (HTTP 429). Wait a while, or lower --workers."),
-    ("sign in to confirm", "YouTube wants a sign-in (bot check). Rerun with --cookies-from-browser chrome."),
-    ("not a bot", "YouTube wants a sign-in (bot check). Rerun with --cookies-from-browser chrome."),
+    ("sign in to confirm", "YouTube wants a sign-in (bot check). Add a YouTube login (a cookies.txt file, or Firefox) in Settings, or --cookies FILE."),
+    ("not a bot", "YouTube wants a sign-in (bot check). Add a YouTube login (a cookies.txt file, or Firefox) in Settings, or --cookies FILE."),
     ("not available in your country", "The matched video is region-blocked."),
     ("video unavailable", "The matched video is unavailable (removed or private)."),
     ("private video", "The matched video is private."),

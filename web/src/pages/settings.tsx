@@ -11,16 +11,17 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { ExportSteps, LoginSelect, UnreliableBrowserNote } from "@/components/login-source"
 import { api } from "@/lib/api"
 import { useLoad } from "@/lib/hooks"
 import type { Settings } from "@/lib/types"
 
 const BITRATE_ITEMS = { 320: "320 kbps", 256: "256 kbps", 192: "192 kbps", 128: "128 kbps" }
-const BROWSER_ITEMS = { none: "No login", chrome: "chrome", firefox: "firefox", edge: "edge", brave: "brave" }
 
 export function SettingsPage() {
   const [checks, setChecks] = useState(0)
   const health = useLoad(() => api.health(checks > 0), [checks])
+  const login = health.data?.find((h) => h.id === "login")
   const loaded = useLoad(() => api.settings())
   const [s, setS] = useState<Settings | null>(null)
   const [saving, setSaving] = useState(false)
@@ -213,26 +214,39 @@ export function SettingsPage() {
                   <Switch id="d-yes" checked={!s.defaults.yes} onCheckedChange={(c) => setD("yes", !c)} />
                 </Field>
                 <FieldSeparator />
-                <Field>
-                  <FieldLabel>Use YouTube login from</FieldLabel>
-                  <Select
-                    items={BROWSER_ITEMS}
-                    value={s.defaults.cookies_from_browser ?? "none"}
-                    onValueChange={(v) => setD("cookies_from_browser", v === "none" ? null : (v as string))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No login</SelectItem>
-                      {["chrome", "firefox", "edge", "brave"].map((b) => (
-                        <SelectItem key={b} value={b}>
-                          {b}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>Helps with “sign in to confirm you're not a bot”; with YT Music Premium, better source audio.</FieldDescription>
+                <Field id="youtube-login">
+                  <FieldLabel>YouTube login</FieldLabel>
+                  <LoginSelect
+                    value={{ cookies_from_browser: s.defaults.cookies_from_browser, cookies_file: s.defaults.cookies_file ?? null }}
+                    filePath={s.defaults.cookies_file ?? ""}
+                    onChange={(l) => setS({ ...s, defaults: { ...s.defaults, ...l } })}
+                  />
+                  {s.defaults.cookies_file !== null && s.defaults.cookies_file !== undefined && (
+                    <Input
+                      aria-label="cookies.txt path"
+                      placeholder="D:\Code\yt-dl-agent\cookies.txt"
+                      value={s.defaults.cookies_file}
+                      onChange={(e) => setD("cookies_file", e.target.value)}
+                    />
+                  )}
+                  <UnreliableBrowserNote browser={s.defaults.cookies_file ? null : s.defaults.cookies_from_browser} />
+                  <FieldDescription>
+                    Gets past “sign in to confirm you're not a bot”; with YT Music Premium, better source audio. If the login can't be
+                    read, downloads carry on without it.
+                  </FieldDescription>
+                  <ExportSteps />
+                  {login && (
+                    <div className="flex items-start gap-2 rounded-md border p-2 text-xs">
+                      <HealthDot state={login.state} className="mt-1" />
+                      <span className="min-w-0 flex-1">
+                        {login.detail}
+                        {dirty && <span className="text-muted-foreground"> (save to check the new setting)</span>}
+                      </span>
+                      <Button variant="ghost" size="xs" onClick={() => setChecks((n) => n + 1)} disabled={health.loading}>
+                        Check
+                      </Button>
+                    </div>
+                  )}
                 </Field>
               </FieldGroup>
             </CardContent>
@@ -255,6 +269,7 @@ export function SettingsPage() {
                   setSaving(true)
                   await api.saveSettings(s)
                   loaded.setData(s)
+                  setChecks((n) => n + 1) // the login (and keys) may have changed: check again
                   setSaving(false)
                   toast.success("Saved to .env")
                 }}

@@ -278,7 +278,7 @@ const SECTIONS: Section[] = [
             ["Write playlist files", <Code>--no-playlist</Code>, "The .m3u8 for playlists."],
             ["Look up albums", <Code>--no-album-lookup</Code>, "Off = songs without an album go to Artist/Singles/. Saves Tavily credits."],
             ["Only first N tracks", <Code>--limit N</Code>, "For trying a playlist out."],
-            ["YouTube login from", <Code>--cookies-from-browser chrome</Code>, "Uses your browser's YouTube login: gets past bot checks, and better audio with YT Music Premium."],
+            ["YouTube login", <Code>--cookies cookies.txt</Code>, "A YouTube login (a cookies.txt file works best, or --cookies-from-browser firefox): gets past bot checks, and better audio with YT Music Premium. See YouTube sign-in."],
           ].map(([a, b, c]) => [<span className="font-medium">{a}</span>, b, c])}
         />
       </>
@@ -339,6 +339,35 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "youtube-login",
+    title: "YouTube sign-in (cookies)",
+    keywords: "cookies login sign in bot check chrome firefox cookies.txt not working premium",
+    body: (
+      <>
+        <P>
+          When YouTube asks to “sign in to confirm you're not a bot”, a YouTube login gets past it (with YT Music Premium it also
+          gives better audio). Set it in <Go to="/settings">Settings → YouTube login</Go>. If it can't be read, downloads carry on
+          without it instead of failing.
+        </P>
+        <Table
+          head={["Login from", "Works?"]}
+          rows={[
+            [<b>cookies.txt file</b>, "Yes, everywhere: the most reliable. See the steps in Settings."],
+            [<b>Firefox</b>, "Yes, if you're signed in to YouTube in Firefox."],
+            [
+              <b>Chrome, Edge, Brave</b>,
+              "Usually not on Windows: they lock their cookies while open (“Could not copy Chrome cookie database”), and Chrome encrypts them so only Chrome can read them, even when closed.",
+            ],
+          ]}
+        />
+        <P>
+          Settings → Services → <b>YouTube login</b> shows whether the login loads and is signed in. A cookies.txt file signs in as
+          you, so keep it private; export it again if the check says it has expired.
+        </P>
+      </>
+    ),
+  },
+  {
     id: "troubleshooting",
     title: "Troubleshooting",
     keywords: "error problem 403 forbidden 429 premium no confident match ollama ffmpeg node deno bot sign in throttling",
@@ -351,7 +380,8 @@ const SECTIONS: Section[] = [
           ["no confident match", "Neither YouTube nor YouTube Music had a result close enough in title and length: usually a very obscure or region-locked track. Each failed song links to its YouTube Music search."],
           ["YouTube refused the download (HTTP 403)", "Usually temporary and retried automatically. If it keeps failing, sync again later or lower Parallel downloads."],
           ["Lots of failures at once / HTTP 429", "YouTube throttling: lower Parallel downloads to 2, wait a while, or update yt-dlp."],
-          ["YouTube wants a sign-in (bot check)", "Set “YouTube login from” to your browser in Options or Settings."],
+          ["YouTube wants a sign-in (bot check)", "Add a YouTube login: a cookies.txt file works best (see YouTube sign-in above)."],
+          ["Could not copy Chrome cookie database", "Chrome's cookies can't be read on Windows. Use a cookies.txt file or Firefox."],
           ["JS runtime / challenge errors", "Install Node.js or Deno and make sure it's on PATH (see Services in Settings)."],
           ["Ollama isn't reachable", "Start Ollama, and check the host and that the model is pulled (Settings → Services)."],
           ["Wrong album folder", "That album came from the search fallback. Run Fix library, which re-reads albums from Spotify."],

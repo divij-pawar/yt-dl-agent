@@ -26,6 +26,7 @@ DEFAULTS: dict[str, tuple[str, object]] = {
     "no_playlist": ("YTDL_NO_PLAYLIST", False),
     "no_album_lookup": ("YTDL_NO_ALBUM_LOOKUP", False),
     "cookies_from_browser": ("YTDL_COOKIES_FROM_BROWSER", None),
+    "cookies_file": ("YTDL_COOKIES_FILE", None),  # a cookies.txt export; wins over the browser
     "yes": ("YTDL_YES", False),
     "log_dir": ("YTDL_LOG_DIR", "logs"),
     "no_plex": ("YTDL_NO_PLEX", False),

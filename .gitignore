@@ -6,3 +6,6 @@ songs/
 logs/
 node_modules/
 web/dist/
+# YouTube login exports: they sign in as you
+cookies*.txt
+cookies/
