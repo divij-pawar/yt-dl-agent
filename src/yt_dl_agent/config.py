@@ -1,7 +1,7 @@
 """Run defaults, from .env, shared by the CLI (argparse defaults) and the web UI (Settings page).
 
   YTDL_OUT=songs  YTDL_WORKERS=4  YTDL_BITRATE=320  YTDL_LOG_DIR=logs
-  YTDL_NO_PLAYLIST=0  YTDL_NO_ALBUM_LOOKUP=0  YTDL_COOKIES_FROM_BROWSER=  YTDL_YES=0
+  YTDL_NO_PLAYLIST=0  YTDL_NO_ALBUM_LOOKUP=0  YTDL_COOKIES_FROM_BROWSER=  YTDL_YES=0  YTDL_NO_PLEX=0
 
 A flag on the command line still wins over these.
 """
@@ -13,8 +13,9 @@ from dotenv import dotenv_values, set_key
 
 ENV_FILE = Path(".env")
 # .env keys the Settings page edits. Secrets are masked when read back (see server.py).
-CONNECTION_KEYS = ("TAVILY_API_KEY", "OLLAMA_HOST", "OLLAMA_MODEL", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET")
-SECRET_KEYS = ("TAVILY_API_KEY", "SPOTIFY_CLIENT_SECRET")
+CONNECTION_KEYS = ("TAVILY_API_KEY", "OLLAMA_HOST", "OLLAMA_MODEL", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET",
+                   "PLEX_URL", "PLEX_TOKEN")
+SECRET_KEYS = ("TAVILY_API_KEY", "SPOTIFY_CLIENT_SECRET", "PLEX_TOKEN")
 
 # option -> (.env key, default)
 DEFAULTS: dict[str, tuple[str, object]] = {
@@ -26,6 +27,7 @@ DEFAULTS: dict[str, tuple[str, object]] = {
     "cookies_from_browser": ("YTDL_COOKIES_FROM_BROWSER", None),
     "yes": ("YTDL_YES", False),
     "log_dir": ("YTDL_LOG_DIR", "logs"),
+    "no_plex": ("YTDL_NO_PLEX", False),
 }
 
 

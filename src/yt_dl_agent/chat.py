@@ -31,6 +31,7 @@ Without the model, use:  song: <title> - <artist>   album: <title> - <artist>
                          discography: <artist>       albums: <artist>      top: <artist>
 Library:   import <file or folder>   (identify, tag and file your own songs)
            fix                       (album art, albums, track numbers for the whole library)
+           plex                      (create/update your playlists in Plex)
 Commands:  queue  (what's queued / running / done)   help   quit"""
 
 _EXPLICIT = re.compile(r"^\s*(song|track|album|discography|albums|top)\s*:\s*(.+?)\s*$", re.I)
@@ -154,7 +155,7 @@ def _artist(r: llm.Request, job: Job) -> list:
 def expand(job: Job) -> list:
     if job.link:
         kind, sid = job.link
-        if kind in ("import", "fix"):
+        if kind in ("import", "fix", "plex"):
             return [(kind, sid)]
         if kind == "user":
             playlists = sources.user_playlists(sid)
@@ -279,6 +280,10 @@ def chat(run_unit, auto_yes: bool = False) -> None:
             path = line[len("import "):].strip().strip('"')
             q.add(Job(label=f"import       {path}", link=("import", [path])))
             log.say("Queued the import.")
+            continue
+        if cmd == "plex":
+            q.add(Job(label="plex         sync playlists", link=("plex", None)))
+            log.say("Queued a Plex playlist sync.")
             continue
         if cmd == "fix":
             q.add(Job(label="fix          the library", link=("fix", None)))

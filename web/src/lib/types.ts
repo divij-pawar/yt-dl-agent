@@ -36,6 +36,7 @@ export interface Collection {
   name: string
   owner_or_artist: string | null
   source: CollectionSource
+  cover_url?: string | null // Spotify's image (covers.py saves a copy)
   tracks: Track[]
 }
 
@@ -50,6 +51,7 @@ export interface CollectionSummary {
   done: number
   failed: number
   m3u8: string | null // songs/<Playlist Name>.m3u8, playlists only
+  cover?: string | null // /api/collections/:id/cover?v=…: the saved cover, null until it's downloaded
   updated: string // mtime of the cache file, ISO
   requeue: Requeue | null // how to run it again (null: imports and other special caches)
 }
@@ -134,6 +136,7 @@ export interface RunOptions {
   limit: number | null
   cookies_from_browser: string | null
   yes: boolean // chat: skip "Queue this?"
+  no_plex?: boolean // don't sync playlists to Plex after downloading (YTDL_NO_PLEX)
 }
 
 // --- library_index.py ------------------------------------------------------------
@@ -319,7 +322,7 @@ export interface LogLine {
 export type HealthState = "ok" | "degraded" | "down" | "unknown"
 
 export interface ServiceHealth {
-  id: "spotify" | "tavily" | "ollama" | "ffmpeg" | "js" | "ytdlp"
+  id: "spotify" | "tavily" | "ollama" | "ffmpeg" | "js" | "ytdlp" | "plex"
   name: string
   state: HealthState
   detail: string
@@ -332,5 +335,30 @@ export interface Settings {
   OLLAMA_MODEL: string
   SPOTIFY_CLIENT_ID: string
   SPOTIFY_CLIENT_SECRET: string
+  PLEX_URL?: string
+  PLEX_TOKEN?: string // masked when read back, like the other secrets
   defaults: RunOptions & { log_dir: string }
+}
+
+// --- plex.py -------------------------------------------------------------------------
+
+export type PlexAction = "created" | "updated" | "up_to_date" | "skipped" | "would_create" | "would_update" | "error"
+
+/** One playlist's outcome from plex.PlexSync.sync */
+export interface PlexResult {
+  spotify_id: string
+  name: string
+  action: PlexAction
+  songs: number // in the Plex playlist (or would be)
+  added: number
+  removed: number
+  missing: number // songs Plex hasn't indexed yet
+  message: string
+}
+
+/** POST /api/plex: plex.sync_all */
+export interface PlexReport {
+  library: string // the Plex music library
+  dry_run: boolean
+  results: PlexResult[]
 }

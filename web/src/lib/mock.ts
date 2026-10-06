@@ -2,6 +2,8 @@
 // imports/*.json, logs/run-*.log). Used until the HTTP API in api.ts is running.
 
 import type {
+  PlexReport,
+  PlexResult,
   Collection,
   CollectionSummary,
   FailedSong,
@@ -632,6 +634,7 @@ export const health: ServiceHealth[] = [
   { id: "ffmpeg", name: "ffmpeg", state: "ok", detail: "on PATH" },
   { id: "js", name: "JS runtime", state: "ok", detail: "node v22.12.0 (deno not found)" },
   { id: "ytdlp", name: "yt-dlp", state: "ok", detail: "2026.08.19" },
+  { id: "plex", name: "Plex", state: "ok", detail: "Library 'Music', 32 synced playlists" },
 ]
 
 export const settings: Settings = {
@@ -640,6 +643,8 @@ export const settings: Settings = {
   OLLAMA_MODEL: "llama3.2:latest",
   SPOTIFY_CLIENT_ID: "",
   SPOTIFY_CLIENT_SECRET: "",
+  PLEX_URL: "http://127.0.0.1:32400",
+  PLEX_TOKEN: "yU8x2…9QkA",
   defaults: {
     out: "songs",
     workers: 4,
@@ -650,6 +655,7 @@ export const settings: Settings = {
     limit: null,
     cookies_from_browser: null,
     yes: false,
+    no_plex: false,
     log_dir: "logs",
   },
 }
@@ -769,3 +775,18 @@ export function preview(kind: string, id: string): Preview {
     })),
   }
 }
+
+/** plex.sync_all: most playlists already in Plex, a couple changed since the last sync. */
+export function plexReport(dryRun: boolean, ids?: string[]): PlexReport {
+  const base = collectionSummaries.filter((c) => c.kind === "playlist" && (!ids || ids.includes(c.spotify_id)))
+  const results: PlexResult[] = base.map((c, i) => {
+    const r = { spotify_id: c.spotify_id, name: c.name, songs: c.done, added: 0, removed: 0, missing: 0 }
+    if (i === 0) return { ...r, action: dryRun ? "would_update" : "updated", added: 2, removed: 1,
+      message: dryRun ? "would update: 2 to add, 1 to remove" : `updated: 2 added, 1 removed, ${c.done} songs` }
+    if (i === 1) return { ...r, action: dryRun ? "would_create" : "created", added: c.done, missing: 1,
+      message: `${dryRun ? "would create" : "created"} with ${c.done} songs (1 not in Plex yet)` }
+    return { ...r, action: "up_to_date", message: `up to date (${c.done} songs)` }
+  })
+  return { library: "Music", dry_run: dryRun, results }
+}
+

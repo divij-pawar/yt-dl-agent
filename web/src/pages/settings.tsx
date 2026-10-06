@@ -104,6 +104,26 @@ export function SettingsPage() {
                   Optional: full track lists past 100, exact albums and track numbers. The developer account that owns the app needs
                   Premium.
                 </FieldDescription>
+                <FieldSeparator />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor="purl">Plex server</FieldLabel>
+                    <Input
+                      id="purl"
+                      placeholder="http://127.0.0.1:32400"
+                      value={s.PLEX_URL ?? ""}
+                      onChange={(e) => set("PLEX_URL", e.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="ptok">Plex token</FieldLabel>
+                    <Secret id="ptok" value={s.PLEX_TOKEN ?? ""} onChange={(v) => set("PLEX_TOKEN", v)} placeholder="optional" />
+                  </Field>
+                </div>
+                <FieldDescription className="-mt-3">
+                  Optional: creates your playlists in Plex, which doesn't read .m3u8 files. Token: in Plex Web, a song's ⋯ › Get
+                  Info › View XML, then the X-Plex-Token value in the address.
+                </FieldDescription>
               </FieldGroup>
             </CardContent>
           </Card>
@@ -167,6 +187,13 @@ export function SettingsPage() {
                     <FieldLabel htmlFor="d-alb">Look up albums</FieldLabel>
                   </FieldContent>
                   <Switch id="d-alb" checked={!s.defaults.no_album_lookup} onCheckedChange={(c) => setD("no_album_lookup", !c)} />
+                </Field>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldLabel htmlFor="d-plex">Sync playlists to Plex after downloading</FieldLabel>
+                    <FieldDescription>Only when a Plex token is set.</FieldDescription>
+                  </FieldContent>
+                  <Switch id="d-plex" checked={!s.defaults.no_plex} onCheckedChange={(c) => setD("no_plex", !c)} />
                 </Field>
                 <Field orientation="horizontal">
                   <FieldContent>

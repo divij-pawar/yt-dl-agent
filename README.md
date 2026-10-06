@@ -280,6 +280,7 @@ Chat limits (without the Spotify API):
 | `--match TEXT` | | profile links: only playlists whose name contains TEXT (repeatable) |
 | `--log-dir DIR` | `logs` | where run logs are kept |
 | `--dry-run` | | `import` / `fix`: show what would change, change nothing |
+| `--no-plex` | `YTDL_NO_PLEX` | don't sync playlists to Plex after downloading |
 | `--undo [RUN]` | | `import`: reverse the last import (or a named one from `songs/.cache/imports/`) |
 | `--cookies-from-browser chrome` | | use your browser's YouTube login; with YT Music Premium the source audio is better |
 | `--port N` | `8765` | `serve`: port for the web UI |
@@ -318,6 +319,16 @@ Up to date: all 21 songs already in the library; nothing to download
   **History** page shows it.
 - **Album lookups** are cached in `songs/.cache/albums.json`, so known songs cost no Tavily credits.
 - Deleted an MP3 by hand? It's simply downloaded again on the next run.
+- **Covers:** every run saves the playlist's or album's Spotify cover (640 px when Spotify has it) to
+  `songs/.cache/covers/collections/<id>.jpg`. When the cover changes on Spotify, the next run picks it up.
+  `fix` saves covers for anything downloaded before covers were kept.
+- **In the web UI**, open a playlist or album to:
+  - **Check for missing songs.** It compares Spotify's list right now (the embed page, so no Tavily
+    credits) with your library, and groups what's missing: *new on Spotify*, *failed before*, *file
+    missing* (downloaded once, since deleted) and *never downloaded*. **Download missing songs** then
+    queues a sync that fetches only those and updates the `.m3u8`.
+  - **Re-download cover** (in the ⋯ menu). It fetches the current cover from Spotify, and puts it on the
+    Plex playlist too.
 
 ## Import your own songs
 
@@ -400,6 +411,51 @@ You can pass several files or folders; folders are searched recursively. In chat
 
 In chat, type `fix`. The first run on a big library uses roughly 1 Tavily credit per 5 songs, since
 every song's Spotify page is read once. After that, results are cached.
+
+## Plex
+
+Plex **doesn't read `.m3u8` files** from a library folder: it only indexes the songs. So the app creates
+the playlists in Plex through the server's API. It matches each playlist's files to the tracks Plex has
+indexed (by file path), keeps the Spotify order, and updates the playlist when the Spotify one changes.
+
+Setup: add the `songs` folder to a **Music** library in Plex, then put these in `.env` (the web UI's
+Settings page has them too):
+
+```
+PLEX_URL=http://127.0.0.1:32400
+PLEX_TOKEN=...
+```
+
+To find the token: in Plex Web, open any song, choose `...` > *Get Info* > *View XML*. The token is
+the `X-Plex-Token=` value at the end of the address.
+
+After that, every playlist download syncs to Plex automatically (turn it off with `--no-plex` or
+`YTDL_NO_PLEX=1`). `fix`, and imports that replace files, re-sync too. To sync everything by hand:
+
+```bash
+.venv\Scripts\yt-dl-agent plex
+```
+
+```
+plex: syncing 32 playlists into 'Music'
+  Night Music: created with 99 songs
+  Overnight: up to date (21 songs)
+  Nostalgia: updated: 1 added, 0 removed, 38 songs
+```
+
+- **New songs:** songs Plex hasn't indexed yet trigger a scan of the songs folder first. Anything still
+  missing is added on the next sync.
+- **Your own playlists are left alone:** playlists the app creates are marked in their Plex summary
+  ("Synced by yt-dl-agent ..."), and only marked playlists are changed. If you already have a Plex
+  playlist with the same name, the app skips that one and tells you.
+- **Plex on another machine or in Docker:** if Plex sees the files under a different path, map it:
+  `PLEX_PATH_MAP=D:\Code\yt-dl-agent\songs=/data/music`. If you have several music libraries,
+  `PLEX_LIBRARY=<name>` picks one.
+- **Duplicates:** a song that's in a Spotify playlist twice appears once in Plex.
+- **Covers:** each playlist gets its Spotify cover as its Plex poster, instead of Plex's auto-generated
+  collage. It's re-uploaded only when the cover changes.
+- **Removing them:** delete them in Plex like any playlist. The app recreates a playlist only when you
+  sync it again.
 
 ## Logs
 

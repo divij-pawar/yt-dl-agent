@@ -76,6 +76,10 @@ def _api_track(t: dict, album: dict | None = None) -> Track:
     )
 
 
+def _api_image(meta: dict) -> str | None:
+    return max(meta.get("images") or [{}], key=lambda i: i.get("width") or 0).get("url")
+
+
 def from_spotify_api(kind: str, sid: str) -> Collection:
     if kind not in ("playlist", "album"):
         raise Unsupported(kind)  # the embed page has everything for single tracks / artist top tracks
@@ -94,9 +98,10 @@ def from_spotify_api(kind: str, sid: str) -> Collection:
                 tracks += [_api_track(t, meta) for t in page["items"]]
                 page = _get_json(page["next"], h) if page.get("next") else None
             return Collection(kind=kind, spotify_id=sid, name=meta["name"], source="spotify-api",
-                              owner_or_artist=", ".join(a["name"] for a in meta["artists"]), tracks=tracks)
+                              owner_or_artist=", ".join(a["name"] for a in meta["artists"]),
+                              cover_url=_api_image(meta), tracks=tracks)
 
-        meta = _get_json(f"{api}/playlists/{sid}?fields=name,owner(display_name)", h)
+        meta = _get_json(f"{api}/playlists/{sid}?fields=name,owner(display_name),images", h)
         tracks, url = [], f"{api}/playlists/{sid}/tracks?limit=100"
         while url:
             page = _get_json(url, h)
@@ -106,7 +111,8 @@ def from_spotify_api(kind: str, sid: str) -> Collection:
                     tracks.append(_api_track(t))
             url = page.get("next")
         return Collection(kind=kind, spotify_id=sid, name=meta["name"], source="spotify-api",
-                          owner_or_artist=meta.get("owner", {}).get("display_name"), tracks=tracks)
+                          owner_or_artist=meta.get("owner", {}).get("display_name"),
+                          cover_url=_api_image(meta), tracks=tracks)
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")[:200]
         raise SourceError(f"Spotify API {e.code}: {body}") from e
@@ -120,8 +126,13 @@ def _embed_url(kind: str, sid: str) -> str:
 
 
 def largest_image(ent: dict) -> str | None:
-    imgs = (ent.get("visualIdentity") or {}).get("image") or []
-    return max(imgs, key=lambda i: i.get("maxWidth") or 0)["url"] if imgs else None
+    """The biggest image an embed entity lists. Playlists with Spotify's automatic 4-album collage only
+    give its size under coverArt (visualIdentity says 0), and the collage comes in 640 px too."""
+    imgs = [(i.get("maxWidth") or 0, i["url"]) for i in (ent.get("visualIdentity") or {}).get("image") or [] if i.get("url")]
+    imgs += [(i.get("width") or 0, i["url"]) for i in (ent.get("coverArt") or {}).get("sources") or [] if i.get("url")]
+    if not imgs:
+        return None
+    return re.sub(r"(mosaic\.scdn\.co/)\d+/", r"\g<1>640/", max(imgs, key=lambda x: x[0])[1])
 
 
 def embed_entity(kind: str, sid: str) -> dict:
@@ -146,7 +157,7 @@ def from_embed(kind: str, sid: str, ent: dict | None = None) -> Collection:
                       explicit=bool(ent.get("isExplicit")), year=int(iso) if iso.isdigit() else None,
                       cover_url=largest_image(ent))
         return Collection(kind=kind, spotify_id=sid, name=ent["title"], owner_or_artist=artists,
-                          source="embed", tracks=[track])
+                          source="embed", cover_url=track.cover_url, tracks=[track])
     owner = _split_artists(ent.get("subtitle") or "") or None
     if kind == "artist":  # embed artist pages carry the top 10 tracks
         owner = ent["name"]
@@ -165,7 +176,7 @@ def from_embed(kind: str, sid: str, ent: dict | None = None) -> Collection:
         raise SourceError("embed page has no tracks")
     name = f"{ent['name']} - top tracks" if kind == "artist" else ent["name"]
     return Collection(kind=kind, spotify_id=sid, name=name, owner_or_artist=owner,
-                      source="embed", tracks=tracks)
+                      source="embed", cover_url=largest_image(ent), tracks=tracks)
 
 
 # --- Tavily Extract of the embed page -------------------------------------

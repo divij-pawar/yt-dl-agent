@@ -10,9 +10,10 @@ Then everything in songs/_Unsorted/ is retried; files that match now move into t
 """
 
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import log, tags
+from . import covers, log, tags
 from .albums import fill_albums
 from .enrich import enrich
 from .importer import REPLACED, UNSORTED, Plan, _settle_albums, identify, run_import
@@ -156,6 +157,11 @@ def run_fix(root: Path, dry_run: bool = False) -> dict:
             log.exception(f"fix {old} failed")
 
     if not dry_run:
+        # Playlist/album covers that were never saved (downloaded before covers were kept).
+        if missing := [c for _, c in colls if c.kind in ("playlist", "album") and not covers.path(root, c.spotify_id).exists()]:
+            log.say(f"saving {len(missing)} playlist/album cover{'s' if len(missing) != 1 else ''} from Spotify")
+            with ThreadPoolExecutor(8) as pool:
+                list(pool.map(lambda c: covers.ensure(root, c), missing))
         # Write the improved metadata into every cached collection that has the song, then move paths.
         for f, coll in colls:
             for t in coll.tracks:

@@ -28,9 +28,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-from . import chat, cli, config, fixer, history, importer, llm, log, sources, spotify_url
+from . import chat, cli, config, covers, fixer, history, importer, llm, log, plex, sources, spotify_url
 from .library import sanitize
 from .library_index import _NOT_COLLECTIONS, LibraryIndex
 from .models import Collection, Track
@@ -43,7 +43,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _QUEUE_KINDS = {"playlist", "album", "track", "artist", "user", "top", "tracks"}
 _SPOTIFY_ID = re.compile(r"[A-Za-z0-9]{22}")
 _RUN_KEYS = {"out", "workers", "bitrate", "links_only", "no_playlist", "no_album_lookup", "limit",
-             "cookies_from_browser"}
+             "cookies_from_browser", "no_plex"}
 RECENT = 6
 
 app = FastAPI(title="yt-dl-agent", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
@@ -72,7 +72,7 @@ def _args(job: chat.Job | None) -> Namespace:
     return Namespace(out=Path(o["out"]), workers=max(1, int(o["workers"])), bitrate=int(o["bitrate"]),
                      links_only=bool(o["links_only"]), no_playlist=bool(o["no_playlist"]),
                      no_album_lookup=bool(o["no_album_lookup"]), limit=o["limit"] or None,
-                     cookies_from_browser=o["cookies_from_browser"] or None,
+                     cookies_from_browser=o["cookies_from_browser"] or None, no_plex=bool(o["no_plex"]),
                      chat_mode=True, dry_run=False, undo=None,
                      job={"id": job.id, "label": job.label.strip()} if job else None)  # for history.Run
 
@@ -252,10 +252,17 @@ def _clean_error(err: str | None) -> str | None:
     return err if better.startswith("Unexpected error") and "\x1b[" not in err else better
 
 
+def _cover(root: Path, sid: str) -> str | None:
+    """URL of the saved cover; the ?v= changes when it's downloaded again, so browsers refetch it."""
+    f = covers.path(root, sid)
+    return f"/api/collections/{sid}/cover?v={int(f.stat().st_mtime)}" if f.exists() else None
+
+
 def _summary(f: Path, c: Collection, root: Path) -> dict:
     m3u8 = f"{sanitize(c.name)}.m3u8"
     return {
         "kind": c.kind, "spotify_id": c.spotify_id, "name": c.name, "owner_or_artist": c.owner_or_artist,
+        "cover": _cover(root, c.spotify_id),
         "source": c.source or "embed", "total": len(c.tracks),
         "done": sum(t.status == "done" for t in c.tracks), "failed": sum(t.status == "failed" for t in c.tracks),
         "m3u8": m3u8 if c.kind == "playlist" and (root / m3u8).exists() else None,
@@ -270,17 +277,46 @@ def collections() -> list[dict]:
     return [_summary(f, c, root) for f, c in _collections(root)]
 
 
-@app.get("/api/collections/{sid}")
-def collection(sid: str) -> dict:
+def _cache_file(sid: str) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", sid):
         raise HTTPException(404)
     f = _root() / ".cache" / f"{sid}.json"
     if f.name in _NOT_COLLECTIONS or f.name in _SPECIAL or not f.exists():
         raise HTTPException(404, "No cached playlist or album with this ID.")
-    c = Collection.model_validate_json(f.read_text("utf-8"))
+    return f
+
+
+@app.get("/api/collections/{sid}")
+def collection(sid: str) -> dict:
+    c = Collection.model_validate_json(_cache_file(sid).read_text("utf-8"))
     for t in c.tracks:
         t.error = _clean_error(t.error)
-    return c.model_dump() | {"requeue": history.requeue_for(c.kind, c.spotify_id, c.name, c.owner_or_artist, c.tracks)}
+    return c.model_dump() | {"requeue": history.requeue_for(c.kind, c.spotify_id, c.name, c.owner_or_artist, c.tracks),
+                             "cover": _cover(_root(), sid)}
+
+
+@app.get("/api/collections/{sid}/cover", include_in_schema=False)
+def collection_cover(sid: str) -> FileResponse:
+    _cache_file(sid)
+    f = covers.path(_root(), sid)
+    if not f.exists():
+        raise HTTPException(404, "No cover saved for this one yet.")
+    media = "image/png" if f.read_bytes()[:4] == b"\x89PNG" else "image/jpeg"
+    return FileResponse(f, media_type=media, headers={"Cache-Control": "max-age=31536000, immutable"})
+
+
+@app.post("/api/collections/{sid}/cover")
+def refresh_cover(sid: str) -> dict:
+    """Download the playlist/album cover from Spotify again, and put it on the Plex playlist."""
+    f = _cache_file(sid)
+    root = _root()
+    with library_lock:
+        c = Collection.model_validate_json(f.read_text("utf-8"))
+        if not covers.ensure(root, c, refresh=True):
+            raise HTTPException(502, "Spotify didn't return a cover for this one.")
+        f.write_text(c.model_dump_json(indent=1), "utf-8")
+        plex_note = plex.refresh_poster(root, c) if c.kind == "playlist" else None
+    return {"cover": _cover(root, sid), "plex": plex_note}
 
 
 def _added(f: Path) -> str:
@@ -526,6 +562,34 @@ def fix(body: DryRunIn) -> dict:
     return report
 
 
+# --- plex ------------------------------------------------------------------------------
+
+
+class PlexIn(BaseModel):
+    dry_run: bool = False
+    ids: list[str] | None = None  # Spotify playlist IDs; all cached playlists when omitted
+
+
+@app.post("/api/plex")
+def plex_sync(body: PlexIn) -> dict:
+    """plex.sync_all: create/update the cached playlists in Plex (Plex never reads the .m3u8 files)."""
+    global _health_cache
+    root = _root()
+    only = None
+    if body.ids is not None:
+        wanted = set(body.ids)
+        only = [c for c in plex.playlists(root) if c.spotify_id in wanted]
+        if not only:
+            raise HTTPException(404, "None of those are downloaded playlists.")
+    try:
+        with library_lock:
+            report = plex.sync_all(root, dry_run=body.dry_run, only=only, raise_errors=True)
+    except plex.PlexError as e:
+        raise HTTPException(503, str(e)) from e
+    _health_cache = None  # the Plex health line counts synced playlists
+    return report
+
+
 # --- logs ------------------------------------------------------------------------------
 
 _LOG_NAME = re.compile(r"run-(\d{8}-\d{6})\.log")
@@ -542,7 +606,7 @@ def _run_summary(first_line: str) -> str:
     m = re.search(r"'urls': \[(.*?)\]", first_line)
     urls = re.findall(r"'([^']*)'", m.group(1)) if m else []
     if urls:
-        if urls[0].lower() in ("import", "fix", "serve"):
+        if urls[0].lower() in ("import", "fix", "plex", "serve"):
             return " ".join(urls)
         parts = []
         for u in urls:
@@ -661,6 +725,10 @@ def _check_js() -> tuple:
     return "down", "No deno or node on PATH: YouTube downloads will fail.", "Install it: winget install OpenJS.NodeJS.LTS"
 
 
+def _check_plex() -> tuple:
+    return plex.status(_root())
+
+
 def _check_ytdlp() -> tuple:
     from yt_dlp.version import __version__
     return "ok", __version__, None
@@ -668,7 +736,7 @@ def _check_ytdlp() -> tuple:
 
 _CHECKS = [("spotify", "Spotify API", _check_spotify), ("tavily", "Tavily", _check_tavily),
            ("ollama", "Ollama", _check_ollama), ("ffmpeg", "ffmpeg", _check_ffmpeg),
-           ("js", "JS runtime", _check_js), ("ytdlp", "yt-dlp", _check_ytdlp)]
+           ("js", "JS runtime", _check_js), ("ytdlp", "yt-dlp", _check_ytdlp), ("plex", "Plex", _check_plex)]
 
 
 @app.get("/api/health")
@@ -704,6 +772,7 @@ def get_settings() -> dict:
 
 
 class DefaultsIn(BaseModel):
+    model_config = ConfigDict(extra="allow")  # run defaults config.py adds later are kept too
     out: str
     workers: int
     bitrate: int
@@ -712,14 +781,18 @@ class DefaultsIn(BaseModel):
     cookies_from_browser: str | None = None
     yes: bool = False
     log_dir: str = "logs"
+    no_plex: bool = False
 
 
 class SettingsIn(BaseModel):
+    model_config = ConfigDict(extra="allow")  # any other key in config.CONNECTION_KEYS
     TAVILY_API_KEY: str = ""
     OLLAMA_HOST: str = ""
     OLLAMA_MODEL: str = ""
     SPOTIFY_CLIENT_ID: str = ""
     SPOTIFY_CLIENT_SECRET: str = ""
+    PLEX_URL: str | None = None  # None: an older UI that doesn't send it (keep what's in .env)
+    PLEX_TOKEN: str | None = None
     defaults: DefaultsIn
 
 
@@ -734,7 +807,10 @@ def put_settings(body: SettingsIn) -> Response:
     current = config.read_env()
     changes = {}
     for k in config.CONNECTION_KEYS:
-        value = getattr(body, k).strip()
+        value = getattr(body, k, None)
+        if value is None:  # not sent (e.g. a UI that doesn't know this key yet): keep what's there
+            continue
+        value = str(value).strip()
         if k in config.SECRET_KEYS and value == _mask(current[k]):
             continue  # the masked value came back unchanged: keep the real one
         if value != current[k]:

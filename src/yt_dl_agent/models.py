@@ -36,4 +36,5 @@ class Collection(BaseModel):
     name: str
     owner_or_artist: str | None = None
     source: str = ""
+    cover_url: str | None = None  # Spotify's image for the playlist/album (saved by covers.py)
     tracks: list[Track]

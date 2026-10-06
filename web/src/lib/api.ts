@@ -16,6 +16,7 @@ import type {
   LogLine,
   LogRun,
   ParsedRequest,
+  PlexReport,
   Preview,
   ProfilePlaylist,
   Requeue,
@@ -43,7 +44,10 @@ export interface Api {
   /** GET  /api/collections      every songs/.cache/<id>.json, summarized */
   collections(): Promise<CollectionSummary[]>
   /** GET  /api/collections/:id  one cached Collection with its tracks, plus how to run it again */
-  collection(id: string): Promise<(Collection & { requeue: Requeue | null }) | null>
+  collection(id: string): Promise<(Collection & { requeue: Requeue | null; cover?: string | null }) | null>
+  /** POST /api/collections/:id/cover  covers.ensure(refresh=True): download the cover from Spotify again,
+   *  and put it on the Plex playlist. plex: what happened there (null for albums). */
+  refreshCover(id: string): Promise<{ cover: string | null; plex: string | null }>
   /** GET  /api/failed           songs that failed somewhere and still aren't in the library */
   failed(): Promise<FailedSong[]>
   /** GET  /api/runs             history.Run records, newest first (no per-song lists); filter by queue job */
@@ -63,12 +67,15 @@ export interface Api {
   unsorted(): Promise<UnsortedEntry[]>
   /** POST /api/fix              fixer.run_fix(root, dry_run) */
   fix(dryRun: boolean): Promise<FixReport>
+  /** POST /api/plex             plex.sync_all(root, dry_run, only): create/update playlists in Plex.
+   *  ids: Spotify playlist IDs (all downloaded playlists when omitted). 503 when Plex isn't set up/reachable. */
+  plexSync(opts?: { dryRun?: boolean; ids?: string[] }): Promise<PlexReport>
 
   /** GET  /api/logs, /api/logs/:name   logs/run-*.log */
   logRuns(): Promise<LogRun[]>
   logLines(name: string): Promise<LogLine[]>
 
-  /** GET  /api/health           checks behind log.explain(): Spotify, Tavily, Ollama, ffmpeg, JS, yt-dlp.
+  /** GET  /api/health           checks behind log.explain(): Spotify, Tavily, Ollama, ffmpeg, JS, yt-dlp, Plex.
    *  Cached for 30 s unless refresh. */
   health(refresh?: boolean): Promise<ServiceHealth[]>
   /** GET/PUT /api/settings      .env + default CLI flags */
@@ -212,6 +219,7 @@ export const mockApi: Api = {
     const c = mock.collections.find((c) => c.spotify_id === id)
     return wait(c ? { ...c, requeue: { link: [c.kind, c.spotify_id] as [LinkKind, string] } } : null)
   },
+  refreshCover: () => wait({ cover: null, plex: "poster updated" }, 900),
   failed: () => wait(mock.failedSongs),
   runs: (f) =>
     wait(
@@ -227,6 +235,7 @@ export const mockApi: Api = {
   undoImport: () => wait(undefined, 600),
   unsorted: () => wait(mock.unsorted),
   fix: (dryRun) => wait({ ...mock.fixReport, dry_run: dryRun }, 1400),
+  plexSync: (o) => wait(mock.plexReport(o?.dryRun ?? false, o?.ids), 1100),
   logRuns: () => wait(mock.logRuns),
   logLines: () => wait(mock.logLines),
   health: () => wait(mock.health, 400),
@@ -261,6 +270,7 @@ export const httpApi: Api = {
   preview: (kind, id) => call("GET", `/preview/${kind}/${id}`),
   collections: () => call("GET", "/collections"),
   collection: (id) => call("GET", `/collections/${id}`),
+  refreshCover: (id) => call("POST", `/collections/${encodeURIComponent(id)}/cover`),
   failed: () => call("GET", "/failed"),
   runs: (f) => call("GET", `/runs?${new URLSearchParams(Object.entries(f ?? {}).filter(([, v]) => v) as [string, string][])}`),
   run: (id) => call("GET", `/runs/${encodeURIComponent(id)}`),
@@ -270,6 +280,7 @@ export const httpApi: Api = {
   undoImport: (name) => call("POST", `/imports/${encodeURIComponent(name)}/undo`),
   unsorted: () => call("GET", "/unsorted"),
   fix: (dry_run) => call("POST", "/fix", { dry_run }),
+  plexSync: (o) => call("POST", "/plex", { dry_run: o?.dryRun ?? false, ids: o?.ids ?? null }),
   logRuns: () => call("GET", "/logs"),
   logLines: (name) => call("GET", `/logs/${encodeURIComponent(name)}`),
   health: (refresh) => call("GET", `/health${refresh ? "?refresh=true" : ""}`),

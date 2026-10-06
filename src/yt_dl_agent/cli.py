@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
-from . import chat, config, fixer, history, importer, log, sources, spotify_url
+from . import chat, config, covers, fixer, history, importer, log, plex, sources, spotify_url
 from .albums import fill_albums
 from .download import download
 from .enrich import enrich
@@ -72,18 +72,30 @@ def _previous(cache_file: Path) -> Collection | None:
         return None
 
 
+def _plex_on(args) -> bool:
+    return plex.configured() and not getattr(args, "no_plex", False)
+
+
 def run_unit(args):
     """For chat mode: run one queued unit, ("album", id) / ("track", id) / ... or ("bare", Track)."""
     def _run(kind, x):
         if kind == "import":
             if args.undo:
                 importer.undo(args.out, args.undo)
+                if _plex_on(args):
+                    plex.sync_all(args.out)
             elif not x:
                 log.warn("Give one or more files or folders to import, e.g. import \"D:\\Music\\old\"")
             else:
-                importer.run_import([Path(p) for p in x], args.out, dry_run=args.dry_run)
+                plans = importer.run_import([Path(p) for p in x], args.out, dry_run=args.dry_run)
+                if _plex_on(args) and not args.dry_run and any(p.status == "better" for p in plans or []):
+                    plex.sync_all(args.out)  # replaced files are new files to Plex
         elif kind == "fix":
             fixer.run_fix(args.out, dry_run=args.dry_run)
+            if _plex_on(args) and not args.dry_run:
+                plex.sync_all(args.out)  # files may have moved
+        elif kind == "plex":
+            plex.sync_all(args.out, dry_run=args.dry_run)
         elif kind == "bare":
             run_collection("track", None, args, coll=chat.bare_collection(x))
         else:
@@ -119,6 +131,10 @@ def _run_collection(kind: str, sid: str | None, args, coll: Collection | None, r
             f"{_n(len(coll.tracks), 'track')} (from {coll.source})")
     log.event("collection", kind=coll.kind, id=sid, name=coll.name, owner=coll.owner_or_artist,
               source=coll.source, total=len(coll.tracks))
+    if coll.kind in ("playlist", "album"):
+        # Keep the cover only if Spotify's image changed; a fresh run notices a new playlist cover.
+        old_url = prev.cover_url if prev else None
+        covers.ensure(root, coll, refresh=bool(coll.cover_url and old_url and coll.cover_url != old_url))
     run.collection(coll)
     if prev and not args.limit:
         now = {t.key for t in coll.tracks}
@@ -190,6 +206,13 @@ def _run_collection(kind: str, sid: str | None, args, coll: Collection | None, r
             m3u8 = write_m3u8(root, coll)
             run.playlist_file(m3u8)
             log.say(f"playlist file -> {m3u8}")
+            if _plex_on(args):
+                log.event("phase", phase="plex")
+                try:  # Plex never reads .m3u8 files from the library: create/update it through its API
+                    plex.sync_all(root, only=[coll])
+                except Exception as e:  # noqa: BLE001 - a Plex problem never fails the download
+                    log.warn(f"Plex sync failed: {log.explain(e)}")
+                    log.exception("plex sync failed")
 
     if prev and (args.links_only or args.limit):
         # A partial run mustn't forget what an earlier full run downloaded.
@@ -219,7 +242,7 @@ def main() -> None:
     d = config.defaults()  # YTDL_* in .env (the web UI's Settings page writes them)
     p = argparse.ArgumentParser(prog="yt-dl-agent",
                                 description="Spotify playlist/album/profile -> MP3 library. "
-                                            "Also: `import <files/folders>`, `fix`, `serve` (web UI).")
+                                            "Also: `import <files/folders>`, `fix`, `plex`, `serve` (web UI).")
     p.add_argument("urls", nargs="*", help="Spotify playlist/album/track/artist/profile links")
     p.add_argument("--chat", action="store_true",
                    help="type requests in plain words (artists, albums, songs, discographies); "
@@ -245,6 +268,8 @@ def main() -> None:
     p.add_argument("--undo", nargs="?", const="last", metavar="RUN",
                    help="import: reverse the last import (or a named one from songs/.cache/imports)")
     p.add_argument("--port", type=int, default=8765, help="serve: port for the web UI (on 127.0.0.1)")
+    p.add_argument("--no-plex", action="store_true", default=d["no_plex"],
+                   help="don't sync playlists to Plex after downloading (when PLEX_TOKEN is set)")
     args = p.parse_args()
 
     log_file = log.setup(args.log_dir)
@@ -254,7 +279,7 @@ def main() -> None:
         from . import server  # local: FastAPI is only needed here
         server.serve(args.port, log_file)
         return
-    if command in ("import", "fix"):  # yt-dl-agent import <files/folders...>  |  yt-dl-agent fix
+    if command in ("import", "fix", "plex"):  # yt-dl-agent import <files/folders...> | fix | plex
         args.chat_mode = False
         try:
             run_unit(args)(command, args.urls[1:])
